@@ -1,0 +1,34 @@
+# --- Virtual machine artifacts (large / host-specific — never commit) ---
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.ova
+*.nvram
+*.vbox-prev
+*.sav
+
+# --- Installation media ---
+*.iso
+
+# --- Exported logs / evidence dumps (may contain host data) ---
+*.evtx
+*.evtx.xml
+exports/
+logs/
+
+# --- Secrets — never commit real credentials ---
+*.secret
+secrets.*
+credentials.*
+*.env
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor ---
+.vscode/
+.idea/
+*.swp
