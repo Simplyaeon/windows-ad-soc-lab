@@ -127,9 +127,9 @@ Every lab (via the template) is laid out identically:
    empty results that were indistinguishable from missing events. Module 04 covers
    where events live and why they go missing; Module 05 covers `Get-WinEvent` fluency.
    Every remaining module's Detect section depends on both.
-3. **Then 02 and 03**, which add new detection surfaces but block nothing. Note that
-   Module 03 needs Sysmon on an air-gapped lab, so the binary has to be transferred by
-   shared folder or attached ISO.
+3. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
+   needs Sysmon; the Sysinternals Suite is already on the lab host, so it only has to
+   be moved into the VMs via shared folder or attached ISO.
 4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
 4. Keep the **Progress log** in `README.md` and the status tables here updated as modules
    are completed.
