@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-08-09_
+_Last updated: 2026-08-22_
 
 ---
 
@@ -51,7 +51,7 @@ starts from).
 ### Part I — Windows Administration
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
-| 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740 | ✅ Lab written |
+| 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
 | 04 | Event Viewer & the Logging Model | (tooling) | ⬜ Planned |
@@ -107,21 +107,29 @@ Every lab (via the template) is laid out identically:
 - ✅ Repo scaffolding, README, roadmap, template, and `.gitignore` in place
 - ✅ **Module 00 complete** — DC01 and WS01 built on `lab-net`, `corp.local` forest created,
   WS01 joined, both snapshotted at `00-clean-install` and `01-domain-ready`
-- ✅ Module 01 fully written, environment now ready to execute it against
+- ✅ **Module 01 complete** — rewritten as a step-by-step run sheet, executed end to end
+  on the lab, and corrected from what the run exposed. Two findings written up.
 - ⬜ Modules 02–12 planned but not yet expanded
-- ⬜ Git repository not yet initialized / pushed to GitHub
+- ✅ Git repository initialized; remote is `github.com/Simplyaeon/windows-ad-soc-lab`
+  (nothing pushed yet beyond the initial commit)
+- ⬜ Evidence screenshots not yet copied into `assets/`; Finding 2's 4767/4723/4724
+  pivot still outstanding
 
 ---
 
 ## Next steps
 
-1. **Initialize git** and make the first commit — the lab is up and screenshots are about
-   to start landing in `assets/`.
-2. **Execute Module 01** on the lab; capture the screenshots into `assets/` and fill in
-   the portfolio write-up.
-3. **Expand the remaining modules.** Suggested priority order:
-   - **Module 05 (PowerShell / `Get-WinEvent`)** — its query fluency is reused everywhere
-   - **Module 12 (Kerberoasting capstone)** — the standout portfolio artifact
-   - then the rest (02–04, 06–11) in dependency order
+1. **Copy the four Module 01 screenshots into `assets/`** and close out Finding 2 by
+   pulling 4767 / 4723 / 4724 on DC01.
+2. **Expand Module 04, then Module 05, before 02 and 03.** The friction during the
+   Module 01 run was not Windows administration — it was log mechanics: too-narrow
+   `StartTime` windows, `Properties[n]` guessing, queries run on the wrong VM, and
+   empty results that were indistinguishable from missing events. Module 04 covers
+   where events live and why they go missing; Module 05 covers `Get-WinEvent` fluency.
+   Every remaining module's Detect section depends on both.
+3. **Then 02 and 03**, which add new detection surfaces but block nothing. Note that
+   Module 03 needs Sysmon on an air-gapped lab, so the binary has to be transferred by
+   shared folder or attached ISO.
+4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
 4. Keep the **Progress log** in `README.md` and the status tables here updated as modules
    are completed.
