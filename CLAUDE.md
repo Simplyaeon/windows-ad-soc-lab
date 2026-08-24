@@ -78,8 +78,12 @@ evidence → MITRE mapping, then a Findings section and a troubleshooting sectio
 
 Findings use **observation → inference → recommendation**, kept strictly separate:
 
-- **Observation** — only what the log literally says. Host, log, event ID, timestamp
-  with timezone, accounts. Reproducible by someone else.
+- **Observation** — only what the log literally says. Host, log, event ID, timestamp,
+  accounts. Reproducible by someone else. **State timestamps in UTC** — that is what the
+  event stores (`TimeCreated SystemTime`); Event Viewer only converts for display. The
+  lab VMs were installed on Pacific while the analyst is on WAT (UTC+1), so displayed
+  hours ran eight hours out and mid-morning activity looked like 3 AM. Name the offset
+  if you also give a local time.
 - **Inference** — labelled judgement, with confidence language ("I assess with high
   confidence"), MITRE technique IDs, and an explicit statement of what *cannot* be
   determined from the evidence.

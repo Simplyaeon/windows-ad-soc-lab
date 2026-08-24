@@ -73,14 +73,26 @@ Should say `WS01`.
 Now count the failed logons from Module 01:
 
 ```powershell
-Get-WinEvent -LogName Security -MaxEvents 500 | Where-Object Id -eq 4625 | Measure-Object
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} | Measure-Object
 ```
 
-Reading it left to right: get the newest 500 events from the Security log → keep only
-the ones whose ID is 4625 → count them.
+`-FilterHashtable` hands the filter to the log itself — "only give me 4625s from
+Security." The filtering happens *before* anything is read. `Measure-Object` counts what
+comes back.
 
 **Write the count down.** In Step 5 you'll watch it become zero, and explaining why is
 the whole point of the module.
+
+> **Why not `-MaxEvents 500 | Where-Object Id -eq 4625`?** Because it lies quietly.
+> `-MaxEvents` takes the newest 500 events **first**, and only then filters them. On a
+> machine that has written more than 500 events since the activity you're hunting, the
+> events you want never reach the filter — you get a small number back, and it looks
+> like an answer rather than a failure.
+>
+> Measured on WS01, 2026-08-24: the `-MaxEvents` form returned **1**, the
+> `-FilterHashtable` form above returned **11**. Same log, same machine, same moment.
+> This is the `-MaxEvents` starvation trap from Module 01, and it's the easiest way in
+> Windows to convince yourself an attack left no trace.
 
 > If it's already 0, this VM was rolled back at some point. The module still works —
 > Steps 5 and 6 make their own material — but you lose the before/after comparison,
@@ -173,7 +185,8 @@ Read across it:
 | Field | What it tells you |
 |---|---|
 | **Subject → Account Name** | who did it |
-| **Member → Security ID** | who was added (a SID, often with no name) |
+| **Member → Security ID** | who was added — a **SID**, permanent |
+| **Member → Account Name** | the same account's **distinguished name** (`CN=…,CN=Users,DC=corp,DC=local`) — a path, so it changes if the object is moved |
 | **Group → Group Name** | what they were added to |
 
 ### The Details tab — the machine version
@@ -215,7 +228,7 @@ Ask for the names instead. Two short commands on **DC01**.
 Grab one 4728 and put it in a box called `$e`:
 
 ```powershell
-$e = Get-WinEvent -LogName Security -MaxEvents 200 | Where-Object Id -eq 4728 | Select-Object -First 1
+$e = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4728} -MaxEvents 1
 ```
 
 Now print its named fields:
@@ -239,9 +252,15 @@ Run that once per event ID you care about and you never guess a position again.
 > The second one ends in `Z` — that's UTC. Event Viewer converts to the machine's local
 > time for display. Three consequences: a timestamp in a finding is meaningless without
 > its timezone; a UTC timestamp pasted into a local-time query searches the wrong window;
-> and correlating WS01 with DC01 assumes their clocks agree. Check yours with
-> `Get-TimeZone` — and if the hours in your Module 01 findings look strange, that's
-> worth knowing before Module 12 builds a timeline on them.
+> and correlating WS01 with DC01 assumes their clocks agree. Check with `Get-TimeZone`.
+>
+> **Found on this run, 2026-08-24.** The 4728 stored `2026-08-11T09:50:59Z` but Event
+> Viewer displayed `02:50:59 AM` — DC01 was still on the Windows install default of
+> Pacific (UTC−7), while the analyst is on WAT (UTC+1). Eight hours out: mid-morning
+> activity was reading as 3 AM, and out-of-hours is a real triage signal. Module 01's
+> findings were restated in UTC as a result. Fix both VMs with
+> `Set-TimeZone -Id "W. Central Africa Standard Time"` — events are stored in UTC, so
+> all history simply re-renders correctly.
 
 ---
 
@@ -432,10 +451,11 @@ wevtutil epl Security C:\evidence\WS01-Security-before.evtx
 Check it worked, and note that you can read an exported log on **any** machine:
 
 ```powershell
-Get-WinEvent -Path C:\evidence\WS01-Security-before.evtx -MaxEvents 500 | Where-Object Id -eq 4625 | Measure-Object
+Get-WinEvent -Path C:\evidence\WS01-Security-before.evtx -FilterXPath "*[System[(EventID=4625)]]" | Measure-Object
 ```
 
-Same count as Step 0.3. That's the whole trick to offline forensics: collect the
+Same count as Step 0.3. (`-FilterXPath` is the filter-first equivalent for a file on
+disk — `-FilterHashtable` only works on live logs.) That's the whole trick to offline forensics: collect the
 `.evtx`, analyse it elsewhere.
 
 > **Never commit `.evtx` files.** `.gitignore` already excludes exported logs — they
@@ -497,20 +517,21 @@ wevtutil gli Security
 `oldestRecordNumber` is now far higher than in 5.2.
 
 ```powershell
-Get-WinEvent -LogName Security -MaxEvents 500 | Where-Object Id -eq 4625 | Measure-Object
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} | Measure-Object
 ```
 
-**Count: 0.**
+**Count: 0.** Note this is the filter-first form from Step 0.3 — nothing is being
+starved here. The events are genuinely gone.
 
 Sit with that for a second. The query is right. The machine is right. And it returns
 nothing — for events you watched being created a few days ago, and which are still
 sitting in the file you exported ten minutes ago:
 
 ```powershell
-Get-WinEvent -Path C:\evidence\WS01-Security-before.evtx -MaxEvents 500 | Where-Object Id -eq 4625 | Measure-Object
+Get-WinEvent -Path C:\evidence\WS01-Security-before.evtx -FilterXPath "*[System[(EventID=4625)]]" | Measure-Object
 ```
 
-📸 **Screenshot the live query returning 0 next to the export returning 5** as
+📸 **Screenshot the live query returning 0 next to the export returning your Step 0.3 count** as
 `04-overwritten-vs-archive.png`. Best single image in the module.
 
 ### 5.6 The lesson
@@ -562,7 +583,7 @@ just get a second 1102.
 **Right-click `Application` → Clear Log → Clear.** Then:
 
 ```powershell
-Get-WinEvent -LogName System -MaxEvents 20 | Where-Object Id -eq 104
+Get-WinEvent -FilterHashtable @{LogName='System'; Id=104}
 ```
 
 **104** landed in **System**, and it names which log was cleared.
@@ -687,7 +708,8 @@ isn't.
 | Method | Use it when |
 |---|---|
 | **Event Viewer filter / custom view** | Reading a handful of events, or you want fields resolved and labelled — **start here** |
-| **`Get-WinEvent` + `Where-Object`** | Simple scripted checks, like the counts in this module |
+| **`-FilterHashtable`** | Scripted checks on a live log, like the counts in this module. **Filters before reading** — can't be starved |
+| **`-FilterXPath`** | The same, on an exported `.evtx` file |
 | **`-FilterXml`** | Multi-log queries. Build it in the GUI and copy the XML out |
 
 ### MITRE ATT&CK
@@ -708,7 +730,8 @@ Work through these in order — you can now answer all four:
 
 1. **Wrong machine.** `hostname`. Domain events on DC01, workstation logon failures on
    WS01.
-2. **Window too narrow.** Drop the time filter and raise `-MaxEvents` instead.
+2. **Window too narrow, or the search was starved.** Widen `StartTime`, and make sure
+   you're filtering with `-FilterHashtable` rather than filtering after `-MaxEvents`.
 3. **The events were overwritten.** `wevtutil gli <log>` — a high `oldestRecordNumber`,
    or an oldest event newer than the period you're asking about, means they're gone and
    no query recovers them.
@@ -716,9 +739,15 @@ Work through these in order — you can now answer all four:
 5. **The channel is disabled.** `Get-WinEvent -ListLog <name>` and check `IsEnabled`.
    Turn it on with `wevtutil sl <name> /e:true`.
 
-**`Where-Object Id -eq 4625` finds nothing but you can see 4625s in Event Viewer.**
-`-MaxEvents 500` took the newest 500 events first, and `Where-Object` filtered *those*.
-If newer noise fills the 500, older matches never reach the filter. Raise the number.
+**A count comes back suspiciously low, and Event Viewer shows more.**
+You filtered *after* limiting. `-MaxEvents 500 | Where-Object Id -eq 4625` takes the
+newest 500 events first, then filters those — so anything older never reaches the
+filter. Measured on WS01 during this module's own run: that form returned **1**, while
+`Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625}` returned **11**.
+
+Rule: **filter first, limit second.** Use `-FilterHashtable` on live logs and
+`-FilterXPath` on exported `.evtx` files. Keep `Where-Object` for narrowing results that
+are already correctly filtered.
 
 **`wevtutil sl` says "The parameter is incorrect."**
 The size isn't a multiple of 64 KB. Use round values: `1048576` (1 MB), `20971520`

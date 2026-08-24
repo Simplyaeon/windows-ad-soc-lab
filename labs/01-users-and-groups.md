@@ -250,9 +250,19 @@ seconds apart. Click the 4728 and read the **General** tab:
 | **Member → Security ID** | *who was added* — `svc_backup`'s **SID** |
 | **Group → Group Name** | `Domain Admins` |
 
-Note that **Member** gives you a *SID*, not a name — often with **Member → Account Name**
-showing `-`. That's the Step 2 RID lesson turning up in a real event. The **Group** field
-does resolve to a name, because the group was resolved locally.
+Note what **Member** actually gives you — neither field is the plain logon name:
+
+- **Member → Security ID** is the **SID**. Permanent; survives renames and moves.
+- **Member → Account Name** is the **distinguished name**, e.g.
+  `CN=svc_backup,CN=Users,DC=corp,DC=local`. Read it right to left: the domain, the
+  container, then the object. It's a *path*, so it changes if someone moves the account
+  to a different OU.
+
+That's the Step 2 SID lesson turning up in a real event. The **Group** field does resolve
+to a plain name, because the group was resolved locally.
+
+> Observed on DC01, 2026-08-24. A **4732** (local group) behaves differently — there the
+> account name is frequently `-` and the SID is all you get.
 
 📸 **Screenshot this one.** It's your best piece of evidence for the write-up.
 
@@ -465,11 +475,20 @@ Written from this lab run. Each follows **observation → inference → recommen
 with the three kept strictly separate: observation is only what the log literally says,
 inference is labelled judgement, recommendation is what should happen next.
 
+> **A note on times.** These findings originally recorded DC01's *displayed* local time.
+> DC01 was left on the Windows install default of Pacific (UTC−7 on these dates), while
+> the analyst is in West Africa (UTC+1) — an eight-hour gap that made mid-morning
+> activity read as 2–4 AM. Timestamps below are now stated in **UTC**, which is what the
+> event record actually stores; Event Viewer only converts it for display. Neither
+> finding drew an out-of-hours inference, so no conclusion changes — but the hour of day
+> is a real triage signal and is not safe to take from a display setting. Verified
+> 2026-08-24 against the raw `TimeCreated SystemTime` of the 4728.
+
 ## Finding 1 — Backdoor domain administrator
 
-**OBSERVATION.** On DC01 (Security log), 2026-08-11 at 02:50:04 local time, event
+**OBSERVATION.** On DC01 (Security log), 2026-08-11 at **09:50:04 UTC**, event
 **4720** recorded creation of the domain account `svc_backup` by `CORP\Administrator`.
-At 02:50:59 — 55 seconds later — event **4728** recorded that account being added to the
+At **09:50:59 UTC** — 55 seconds later — event **4728** recorded that account being added to the
 security-enabled global group **Domain Admins**, by the same subject. Domain Admins
 previously contained only the built-in `Administrator` account. No corresponding change
 ticket exists.
@@ -495,10 +514,10 @@ determine from these logs how `Administrator` credentials were obtained.
 
 ## Finding 2 — Account lockout following repeated authentication failures
 
-**OBSERVATION.** On DC01 (Security log), 2026-08-16 at 04:14:36 local time, event
+**OBSERVATION.** On DC01 (Security log), 2026-08-16 at **11:14:36 UTC**, event
 **4771** recorded a Kerberos pre-authentication failure for `asmith@corp.local` with
 failure code **0x18** (bad password), from client address 10.0.0.20. Four further 4771
-events for the same account followed through 04:15:01, at which point event **4740**
+events for the same account followed through **11:15:01 UTC**, at which point event **4740**
 recorded the account locked out, with Caller Computer Name **WS01** — consistent with the
 domain lockout policy of 5 failed attempts within a 10-minute window. Corresponding
 **4625** events on WS01 over the same window show **Logon Type 2**, indicating the
