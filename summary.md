@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-08-22_
+_Last updated: 2026-08-24_
 
 ---
 
@@ -34,6 +34,7 @@ starts from).
 | `SOC-Analyst-Roadmap.md` | The full 12-module plan across Windows Administration (Part I) and Active Directory (Part II), plus a mini-SIEM cross-cutting module and an 8-week pacing table |
 | `labs/00-lab-build.md` | **Module 00** — VM creation, Windows installs, `lab-net` setup, DC promotion and domain join, with troubleshooting |
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
+| `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
 | `assets/` | Folder for screenshots / evidence referenced by the labs |
@@ -54,7 +55,7 @@ starts from).
 | 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
-| 04 | Event Viewer & the Logging Model | (tooling) | ⬜ Planned |
+| 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | 🟡 Written, not run |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ⬜ Planned |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
@@ -109,7 +110,11 @@ Every lab (via the template) is laid out identically:
   WS01 joined, both snapshotted at `00-clean-install` and `01-domain-ready`
 - ✅ **Module 01 complete** — rewritten as a step-by-step run sheet, executed end to end
   on the lab, and corrected from what the run exposed. Two findings written up.
-- ⬜ Modules 02–12 planned but not yet expanded
+- 🟡 **Module 04 written, not yet run** — six steps, mostly Event Viewer clicks, built
+  around one skill: telling "nothing happened" apart from "I can't see it." Steps 5 and 6
+  deliberately destroy the WS01 Security log (silent overwrite, then an outright clear),
+  so `mod04-start` snapshots are mandatory before starting
+- ⬜ Modules 02, 03, 05–12 planned but not yet expanded
 - ✅ Git repository initialized; remote is `github.com/Simplyaeon/windows-ad-soc-lab`
   (nothing pushed yet beyond the initial commit)
 - ⬜ Evidence screenshots not yet copied into `assets/`; Finding 2's 4767/4723/4724
@@ -121,7 +126,7 @@ Every lab (via the template) is laid out identically:
 
 1. **Copy the four Module 01 screenshots into `assets/`** and close out Finding 2 by
    pulling 4767 / 4723 / 4724 on DC01.
-2. **Expand Module 04, then Module 05, before 02 and 03.** The friction during the
+2. **Run Module 04**, then expand Module 05, before 02 and 03. The friction during the
    Module 01 run was not Windows administration — it was log mechanics: too-narrow
    `StartTime` windows, `Properties[n]` guessing, queries run on the wrong VM, and
    empty results that were indistinguishable from missing events. Module 04 covers

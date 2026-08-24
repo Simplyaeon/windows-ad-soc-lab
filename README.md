@@ -44,7 +44,7 @@ through is [`SOC-Analyst-Roadmap.md`](./SOC-Analyst-Roadmap.md).
 | 01 | [Users & Groups](./labs/01-users-and-groups.md) | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⚪ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⚪ Planned |
-| 04 | Event Viewer & the Logging Model | (tooling) | ⚪ Planned |
+| 04 | [Event Viewer & the Logging Model](./labs/04-event-viewer-logging-model.md) | 1102, 104, 4719, 4688 | 🟡 Written, not yet run |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ⚪ Planned |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⚪ Planned |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⚪ Planned |
@@ -73,7 +73,8 @@ through is [`SOC-Analyst-Roadmap.md`](./SOC-Analyst-Roadmap.md).
 ├── SOC-Analyst-Roadmap.md        # the full 12-module plan
 ├── labs/                         # one file per module — the write-ups
 │   ├── 00-lab-build.md           # VM + domain build — start here
-│   └── 01-users-and-groups.md
+│   ├── 01-users-and-groups.md
+│   └── 04-event-viewer-logging-model.md
 ├── templates/
 │   └── module-lab-template.md    # copy this to start a new module
 └── assets/                       # screenshots / evidence referenced by the labs
@@ -118,3 +119,4 @@ This is a **defensive learning lab**, but treat the repo as public:
 | 2026-08-09 | 01 — Users & Groups | 🟡 In progress. Lab rewritten as a step-by-step run sheet; audit-policy setup added (Module 00 never enabled it) and the brute-force step changed from `net use` to login-screen attempts + a lockout policy. |
 | 2026-08-15 | 01 — Users & Groups | Steps 0–4 executed. Auditing enabled on DC01 + WS01, `mod01-start` snapshots taken. Local `helpdesk` created on WS01, domain `asmith` created on DC01, Domain Admins baselined (`Administrator` only). |
 | 2026-08-22 | 01 — Users & Groups | ✅ **Complete.** Steps 5–9 executed: backdoor admin created and escalated (4720 + 4728, 55s apart), lockout policy applied, five failed logons driving 4771/4740, cleanup verified (Domain Admins back to `Administrator` only). Two findings written up in observation → inference → recommendation form. Lab file corrected from the run: 4728 `Member` is a SID not a name, `Get-WinEvent` windows widened, troubleshooting expanded (wrong machine, `-MaxEvents` starvation, 4771 pre-auth type vs logon type, `ANONYMOUS LOGON` baseline). **Outstanding:** four evidence screenshots not yet copied into `assets/`; Finding 2's 4767/4723/4724 pivot not yet pulled. |
+| 2026-08-24 | 04 — Event Viewer & Logging Model | 🟡 Written, not yet run. Six steps, mostly Event Viewer clicks: the log tree and which VM writes what, an event's General vs XML view, building filters by clicking and saving three custom views, measuring real log retention, then destroying evidence two ways — silent overwrite (shrink + 4688 flood) and an outright clear (1102 / 104). Built around one skill: telling "nothing happened" apart from "I can't see it." Module 01's open Finding 2 is answered by custom View 2. |
