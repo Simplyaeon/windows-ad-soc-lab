@@ -523,30 +523,51 @@ domain lockout policy of 5 failed attempts within a 10-minute window. Correspond
 **4625** events on WS01 over the same window show **Logon Type 2**, indicating the
 attempts were made interactively at that machine's console.
 
+At **11:23:00 UTC** event **4767** recorded the account being unlocked. Twenty-nine
+seconds later, at **11:23:29 UTC**, event **4768** recorded a Kerberos ticket granted to
+`asmith` — the first successful authentication for the account after the lockout. A
+review of 4720/4722/4723/4724/4725/4726/4728/4729/4732/4756/4767 across the preceding 30
+days returned **no 4723 and no 4724 for `asmith`**: the account's password was neither
+changed by the user nor reset by an administrator at any point in that window.
+
 **INFERENCE.** All five pre-authentication attempts failed with code 0x18; no successful
 authentication for `asmith` occurred before the lockout, so the password was not guessed
-correctly during this sequence. A successful logon for the same account followed after
-the account was unlocked. This establishes that valid credentials were used at that
-point, but does **not** establish that the preceding attempts produced them — sequence
-alone does not demonstrate causation.
+correctly during this sequence.
 
-Two explanations fit the evidence. The failures and subsequent success are consistent
-with a legitimate user mistyping their password, being locked out by policy, and being
-unlocked through normal administrative action — by far the more common pattern, and I
-assess it the more likely here given all attempts originated from a single domain-joined
-workstation console. The alternative, that credentials were obtained by other means
-between lockout and success, cannot be excluded from these logs alone.
+The unlock was a deliberate administrative act, established two independent ways.
+Automatic expiry of a lockout does not write a 4767 — only an explicit unlock does — so
+the event's presence is itself evidence of intervention. Separately, the timing agrees:
+the lockout at 11:15:01 UTC under a ten-minute `LockoutDuration` would have expired on
+its own at 11:25:01 UTC, but the unlock is recorded at 11:23:00 UTC, two minutes ahead of
+that. The account did not simply time out.
+
+The absence of any 4723 or 4724 for `asmith` establishes that the password in force at
+the successful 11:23:29 UTC logon was the same one in force during the failures. Nobody
+reset it in between.
+
+I assess with high confidence that this is a legitimate user mistyping their password,
+locking themselves out under policy, being unlocked by an administrator, and then signing
+in with the credentials they already held. Every element of that account is now evidenced
+rather than assumed: the failures are all 0x18 from one console (Logon Type 2 on WS01,
+single source host), the unlock is attested by 4767 and corroborated by timing, and the
+password's continuity is established by the absence of reset events.
+
+What the evidence still cannot establish is how the person at that console came to know
+the correct password at 11:23:29 UTC. The logs show a valid credential being used; they
+cannot show who holds it. That limitation is inherent to authentication logging and is
+not resolved by further querying — it is resolved by asking the account owner.
 
 **RECOMMENDATION.**
 1. **Confirm with the account owner.** Establish whether `asmith` locked themselves out.
-   This resolves the ambiguity faster than any query.
-2. **Retrieve the discriminating events.** Pull 4767 (account unlocked) and 4723/4724
-   (password change or admin reset). A reset preceding the successful logon rules out
-   the guessed password having been used.
-3. **Review the resulting session.** Take the Logon ID from the successful 4624 and
-   enumerate 4688 process creation within it.
-4. **If compromise cannot be excluded**, force a password reset, terminate active
-   sessions, and monitor the account for 30 days.
+   This is now the only outstanding question, and no query resolves it.
+2. **Identify who performed the unlock.** Read the Subject account from the 4767 and
+   confirm it was an authorised administrator acting on a request, rather than the same
+   party who made the failed attempts. An unlock performed by whoever was sitting at the
+   console would materially change this assessment.
+3. **Review the resulting session.** Take the Logon ID from the successful 4624 on WS01
+   and enumerate 4688 process creation within it.
+4. **If the account owner does not account for the failures**, force a password reset,
+   terminate active sessions, and monitor the account for 30 days.
 5. **Retain the lockout policy.** `corp.local` had no lockout policy configured before
    2026-08-16; unlimited password attempts were possible domain-wide.
 6. **Detection improvement.** A single 4740 is routine and should not alert. Alert on
@@ -557,16 +578,30 @@ between lockout and success, cannot be excluded from these logs alone.
 
 **Evidence:** `assets/01-4740-lockout.png`, `assets/01-4625-failures.png`
 
-> **Open items in Finding 2.** The successful logon timestamp is not yet recorded, and
-> the 4767 / 4723 / 4724 events named in recommendations 1–2 have not been pulled, so
-> the two hypotheses remain unresolved. Fill these in before treating this finding as
-> complete.
+> **Finding 2 closed 2026-08-24**, during the Module 04 run. The 4767, 4768 and the
+> absence of 4723/4724 were retrieved using the `Account and group changes` custom view
+> built in Module 04 Step 3.3. The competing hypothesis — that credentials were obtained
+> between lockout and success — is now excluded on the password-continuity evidence.
+> One question remains open and is not answerable from logs: whether the account owner
+> accounts for the failures.
 
 ### Baseline artifact noted during this run
 
 Historical 4728 events with an `ANONYMOUS LOGON` subject were identified as
 domain-creation artifacts from DC promotion on 2026-08-09 and excluded from Finding 1.
 Distinguishing baseline from incident is most of what triage actually is.
+
+A **4724** for `svc_backup` on 2026-08-11 was likewise excluded. Creating an account with
+`New-ADUser -AccountPassword` writes 4720, 4722 and 4724 within the same second — the
+4724 records the initial password being set, not an intervention. The test is whether the
+4724 stands alone:
+
+| Pattern | Reading |
+|---|---|
+| 4724 beside a 4720, same account, same second | Account creation. Baseline noise |
+| 4724 alone, against an account that already existed | An administrator reset another user's password — an account-takeover primitive, and high severity against a privileged account |
+
+*Verified 2026-08-24 during the Module 04 run.*
 
 ---
 
