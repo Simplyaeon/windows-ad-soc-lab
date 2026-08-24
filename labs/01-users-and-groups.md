@@ -523,7 +523,9 @@ domain lockout policy of 5 failed attempts within a 10-minute window. Correspond
 **4625** events on WS01 over the same window show **Logon Type 2**, indicating the
 attempts were made interactively at that machine's console.
 
-At **11:23:00 UTC** event **4767** recorded the account being unlocked. Twenty-nine
+At **11:23:00 UTC** event **4767** recorded the account being unlocked, with Subject
+`CORP\Administrator` — the same account that is Subject of the 4720 and 4728 in Finding 1.
+Twenty-nine
 seconds later, at **11:23:29 UTC**, event **4768** recorded a Kerberos ticket granted to
 `asmith` — the first successful authentication for the account after the lockout. A
 review of 4720/4722/4723/4724/4725/4726/4728/4729/4732/4756/4767 across the preceding 30
@@ -560,21 +562,26 @@ not resolved by further querying — it is resolved by asking the account owner.
 **RECOMMENDATION.**
 1. **Confirm with the account owner.** Establish whether `asmith` locked themselves out.
    This is now the only outstanding question, and no query resolves it.
-2. **Identify who performed the unlock.** Read the Subject account from the 4767 and
-   confirm it was an authorised administrator acting on a request, rather than the same
-   party who made the failed attempts. An unlock performed by whoever was sitting at the
-   console would materially change this assessment.
-3. **Review the resulting session.** Take the Logon ID from the successful 4624 on WS01
+2. **Establish that the unlock was requested, not self-served.** The Subject is
+   `CORP\Administrator`, a shared privileged account, so the event names a credential
+   rather than a person. Confirm against the helpdesk record that an administrator
+   unlocked `asmith` in response to a request. An unlock performed by whoever was sitting
+   at the console — twenty-nine seconds before signing in — would be a materially
+   different picture, and this field alone cannot distinguish the two.
+3. **Treat `CORP\Administrator` as a pivot.** The same account is Subject of the 4720 and
+   4728 in Finding 1 and of this unlock. Enumerate its logons (4624, 4768) across the
+   period, with source host and logon type.
+4. **Review the resulting session.** Take the Logon ID from the successful 4624 on WS01
    and enumerate 4688 process creation within it.
-4. **If the account owner does not account for the failures**, force a password reset,
+5. **If the account owner does not account for the failures**, force a password reset,
    terminate active sessions, and monitor the account for 30 days.
-5. **Retain the lockout policy.** `corp.local` had no lockout policy configured before
+6. **Retain the lockout policy.** `corp.local` had no lockout policy configured before
    2026-08-16; unlimited password attempts were possible domain-wide.
-6. **Detection improvement.** A single 4740 is routine and should not alert. Alert on
+7. **Detection improvement.** A single 4740 is routine and should not alert. Alert on
    the patterns that aren't: one account locked from multiple source hosts, several
    accounts locked within a short window (password spraying), or sustained 4771 `0x18`
    failures against a single account outside business hours.
-7. **Preserve** the DC01 and WS01 Security logs covering 04:00–05:00 on 2026-08-16.
+8. **Preserve** the DC01 and WS01 Security logs covering 11:00–12:00 UTC on 2026-08-16.
 
 **Evidence:** `assets/01-4740-lockout.png`, `assets/01-4625-failures.png`
 
