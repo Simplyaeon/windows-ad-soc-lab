@@ -45,17 +45,25 @@ assets/                    screenshots referenced by the labs
 
 ## Where things stand
 
-*As of 2026-08-24. `summary.md` carries the fuller version.*
+*As of 2026-08-25. `summary.md` carries the fuller version.*
 
 Modules 00 and 01 **complete**, both findings closed. Module 01's Finding 2 was resolved
 during the Module 04 run: 4767 unlock at 11:23:00 UTC by `CORP\Administrator`, 4768
 success 29 seconds later, and no 4723/4724 anywhere in 30 days, which excludes the
 competing hypothesis.
 
-**Module 04 is written and partly run.** Steps 0–4 done (log tree, reading an event,
-custom views, retention). **Steps 5 and 6 remain** — the destructive pair: shrink the
-WS01 Security log, flood it with 2000 4688s, watch the Module 01 4625s vanish, then clear
-the log and find the 1102. Requires `mod04-start` first.
+**Module 04 is written and nearly run.** Steps 0–5 done. **Step 6 (clear the log → find
+the 1102) is in progress** — at the point of reading the 1102's Subject via
+`.Event.UserData.LogFileCleared`, then clearing Application to see the 104 land in System.
+
+Step 5 ran on 2026-08-25 and produced Finding 1: the log would **not** shrink on this host
+(Security log min 1028 KB, 64 KB granularity; even valid small sizes refused, GUI and
+`wevtutil` both), so evidence was overwritten by **volume** — ~27,800 `cmd.exe` process
+creations pushed `oldestRecordNumber` from 1 to 8378, evicting the 16 August 4625 sequence
+(highest RecordId 6007). Live 4625 query now returns 4 (all 24–25 Aug); the pre-flood
+export `C:\evidence\WS01-Security-before.evtx` still holds all 14. `oldestRecordNumber` is
+the evidence-loss odometer: it never decreases, never reuses numbers, so `oldest − 1` is
+how many records the log has destroyed in its life.
 
 Then **05 (PowerShell for Defenders)**, then 02 and 03. The Module 01 run showed the
 bottleneck is log mechanics, not Windows administration.
@@ -64,9 +72,12 @@ Measured on WS01, 2026-08-24 — useful baselines: Security log holds **8764 rec
 7.07 MB of 20 MB**, oldest event 28 July, ~845 bytes per event, ~0.26 MB/day, so ~76 days
 to fill and nothing has ever been overwritten.
 
-Outstanding: Module 01's four screenshots and Module 04's still aren't in `assets/`;
-Module 04's custom Views 1 and 3 not built; `mod04-start` not taken; DC01 licence not
-rearmed; **nothing pushed to GitHub**.
+Outstanding: Module 01's four screenshots and Module 04's still aren't in `assets/`
+(incl. `04-overwritten-vs-archive.png`, the live-4 vs export-14 side-by-side); Module 04's
+custom Views 1 and 3 not built; Step 6 not finished; DC01 **and WS01** eval licences both
+expired and shutting down hourly, neither rearmed (WS01 died mid-flood during Step 5 —
+harmless, record numbers persist across reboot, resume the batch); `mod04-start` was not
+confirmed taken; **nothing pushed to GitHub** (7 commits local).
 
 ## How to work on this
 
@@ -118,6 +129,15 @@ construct at a time.
   ```powershell
   ([xml]$e.ToXml()).Event.EventData.Data | Format-Table Name, '#text'
   ```
+  Most events keep their fields under `.Event.EventData.Data`, but some use `UserData`
+  instead — **1102** stores its subject at `.Event.UserData.LogFileCleared`
+  (`SubjectUserName`), and 104 similarly. If `EventData.Data` is empty, check `UserData`.
+- **Read an exported log with `-Path <file>.evtx`**, and filter it with `-FilterXPath`
+  (not `-FilterHashtable`, which is live-log only), e.g.
+  `Get-WinEvent -Path C:\evidence\x.evtx -FilterXPath "*[System[(EventID=4625)]]"`. An
+  `.evtx` is a **frozen snapshot** taken at export time — it does not track the live log,
+  which is exactly why it survives overwrite/clear. `wevtutil epl <log> <file>` exports;
+  reads work on any machine, not just the source host.
 - 4771 has **no Logon Type** — "Type: 2" there is Pre-Authentication Type
   (`PA-ENC-TIMESTAMP`). Interactive-vs-network evidence comes from 4625 on WS01.
 - Empty output is not an error. Check in order: wrong machine → window too narrow or
