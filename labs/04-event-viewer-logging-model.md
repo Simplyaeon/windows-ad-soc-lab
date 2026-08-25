@@ -473,68 +473,89 @@ wevtutil gli Security
 Record numbers only ever count upward, so a jump in `oldestRecordNumber` is direct proof
 that records were overwritten, and the size of the jump tells you how many.
 
-### 5.3 Shrink the log
+### 5.3 Find the exact target, then overwrite past it
+
+The goal is to push the log's overwrite frontier — `oldestRecordNumber` — past the
+records you want gone. First find how far that is. The events to destroy are the 16 August
+4625 failures; get the highest record number among them:
 
 ```powershell
-wevtutil gl Security
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} | Select-Object TimeCreated, RecordId
 ```
 
-Note the `maxSize` — you restore it in Step 6.4.
+Call the highest 16 August `RecordId` **T** (on the 2026-08-25 run, T = 6007). You are
+done when `oldestRecordNumber` exceeds **T** — at that point every record up to T,
+including your target events, has been overwritten.
 
-```powershell
-wevtutil sl Security /ms:1048576
-```
+> **Two ways to overwrite, and one of them may not work on your host.**
+>
+> **Shrinking the log** is the fast way — `wevtutil sl Security /ms:<bytes>` to force the
+> ceiling below the current file size. But the Security log has a **minimum of 1028 KB**
+> and sizes must be multiples of **64 KB**, and on the 2026-08-25 run this host **refused
+> every small size regardless**, from both `wevtutil` and the GUI ("the size is too
+> small" / "not valid"). If yours accepts it, note the old `maxSize` (restore it in 6.4),
+> set something like `wevtutil sl Security /ms:1114112`, then jump to the flood below —
+> it'll take only a few hundred events.
+>
+> **Flooding at full size** always works and is arguably more realistic — an attacker
+> generating noise doesn't get to resize the log first. That's the route documented here.
 
-1 MB. Small, but not unrealistic — plenty of real machines fill their default just as
-fast.
-
-### 5.4 Make noise
-
-Turn on process creation logging first:
+Turn on process-creation logging (this itself writes a **4719**, audit-policy-changed):
 
 ```powershell
 auditpol /set /subcategory:"Process Creation" /success:enable
 ```
 
-That's event **4688**, one per process started — the most useful ID in Windows and also
-the noisiest, which is what makes it a good flood. Module 05 uses it properly.
+That enables **4688**, one event per process started — the noisiest useful ID in Windows,
+which is what makes it a good flood. Module 05 uses it properly.
 
-Now start two thousand processes:
+Now size the flood. At full 20 MB the log holds ~29,000 records, so you must first fill
+the free space, **then** evict T more. On the 2026-08-25 run that worked out to roughly
+28,000 events total. Run it in batches so a mid-run reboot (the eval-licence shutdown)
+doesn't cost you progress — record numbers persist across reboots, so you just resume:
 
 ```powershell
-1..2000 | ForEach-Object { & cmd.exe /c exit }
+1..10000 | ForEach-Object { & cmd.exe /c exit }
 ```
 
-`1..2000` is the numbers 1 to 2000; `ForEach-Object { }` runs the block once for each;
-the block starts `cmd.exe` and immediately exits. Takes about a minute.
-
-### 5.5 Look at what you lost
+`1..10000` is the numbers 1 to 10000; `ForEach-Object { }` runs the block once each; the
+block starts `cmd.exe` and immediately exits. About 6–8 minutes. Re-run as needed,
+checking progress between batches:
 
 ```powershell
 wevtutil gli Security
 ```
 
-`oldestRecordNumber` is now far higher than in 5.2.
+Once the log is full, `numberOfLogRecords` stops climbing and **`oldestRecordNumber`
+starts advancing** — that's eviction. Keep going until `oldestRecordNumber` > T.
+
+### 5.4 Look at what you lost
+
+With `oldestRecordNumber` past T:
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} | Measure-Object
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} | Select-Object TimeCreated, RecordId
 ```
 
-**Count: 0.** Note this is the filter-first form from Step 0.3 — nothing is being
-starved here. The events are genuinely gone.
+The 16 August failures are gone; only entries newer than the frontier remain (on the run,
+4 events from 24–25 August). This is the filter-first form from Step 0.3 — nothing is
+starved, the old events are genuinely overwritten. Eviction is **oldest-first**, so the
+specific incident you targeted vanishes while unrelated recent noise survives — which is
+exactly backwards from what an investigator would want, and the whole point.
 
-Sit with that for a second. The query is right. The machine is right. And it returns
-nothing — for events you watched being created a few days ago, and which are still
-sitting in the file you exported ten minutes ago:
+Now the same query against the export you took in 5.1:
 
 ```powershell
 Get-WinEvent -Path C:\evidence\WS01-Security-before.evtx -FilterXPath "*[System[(EventID=4625)]]" | Measure-Object
 ```
 
-📸 **Screenshot the live query returning 0 next to the export returning your Step 0.3 count** as
-`04-overwritten-vs-archive.png`. Best single image in the module.
+It still holds all 14, including the 16 August sequence. Same machine, same log, minutes
+apart — one starved of its own history, one preserved because you exported first.
 
-### 5.6 The lesson
+📸 **Screenshot the live query beside the export count** as `04-overwritten-vs-archive.png`.
+Best single image in the module.
+
+### 5.5 The lesson
 
 An empty result has four causes, and the output looks identical for all of them:
 
@@ -611,11 +632,14 @@ mini-SIEM module exists to do.
 
 ### 6.4 Put WS01 back
 
+If you shrank the log in 5.3, restore its size — using whatever `maxSize` you noted:
+
 ```powershell
 wevtutil sl Security /ms:20971520
 ```
 
-Use whatever `maxSize` you noted in 5.3. Confirm:
+(If you took the flood route and never shrank it, the size is already 20 MB; skip this.)
+Confirm:
 
 ```powershell
 Get-WinEvent -ListLog Security
@@ -642,7 +666,7 @@ Save into `../assets/`:
 - [ ] `04-event-xml-view.png` — the Details → XML view of a 4728
 - [ ] `04-custom-view-account-changes.png` — View 2 on DC01
 - [ ] `04-retention.png` — log sizes and oldest event, both VMs
-- [ ] `04-overwritten-vs-archive.png` — live query 0, export 5
+- [ ] `04-overwritten-vs-archive.png` — live query 4 (24–25 Aug only), export 14 (incl. 16 Aug)
 - [ ] `04-1102-log-cleared.png` — View 3 with the 1102 and 104
 
 Plus the three exported custom-view XML files. "I built the saved views a SOC runs on"
@@ -655,17 +679,65 @@ is a concrete thing to point at in an interview.
 **Write these after the run**, in the same **observation → inference → recommendation**
 form as Module 01, with the three kept strictly separate.
 
-Two are set up for you:
+Finding 2 is still scaffolded (Step 6 not yet run). Finding 1 is written from the
+2026-08-25 run:
 
-### Finding 1 — Security log evidence loss on WS01 (Step 5)
+## Finding 1 — Security log evidence loss on WS01
 
-The observation is the interesting part: the record-number gap from `wevtutil gli`, the
-configured maximum size, the timestamp of the oldest surviving event, and the events
-known to be missing. The inference has to name both hypotheses honestly — **routine
-circular overwrite under normal volume** versus **deliberate log-size reduction to force
-evidence off the host (T1562.002)** — say which you favour and why, and state what would
-tell them apart: a 4719 audit-policy change, or a log configuration change correlated in
-time with other suspicious activity.
+**OBSERVATION.** On WS01 (Security log), between roughly 2026-08-24 and 2026-08-25, the
+log's `oldestRecordNumber` advanced from **1** to **8378** while `numberOfLogRecords` held
+near its ceiling at ~29,600 in a 20 MB (`20971520`-byte) circular log. Because Windows
+record numbers are assigned in sequence and never reused, records **1 through 8377 were
+destroyed** — overwritten, not deleted individually. A high volume of **4688** (process
+creation) events dominates the surviving window. The audit subcategory **Process
+Creation** was enabled shortly before the overwriting began, recorded by a **4719** audit
+policy change. A count of **4625** (failed logon) in the live log returns **4 events, all
+dated 24–25 August**; an `.evtx` export taken immediately beforehand contains **14**,
+including a five-event failed-logon-then-lockout sequence from **16 August** whose highest
+record number (6007) now falls below `oldestRecordNumber` and is therefore gone from the
+live log.
+
+**INFERENCE.** The 16 August authentication-failure sequence is no longer recoverable
+from the live Security log; it survives only in the pre-overwrite export. Two readings fit
+the observation. The first is **routine circular overwrite** — a small (20 MB) log filling
+under legitimately high process-creation volume and rolling its oldest records off, which
+is the normal, unremarkable behaviour of an undersized log. The second is **deliberate
+generation of log volume to force older evidence off the host** — an impair-logging
+technique (T1562.002 / T1070) that is markedly quieter than clearing the log, since it
+writes **no 1102** and leaves only an elevated `oldestRecordNumber` and an anomalous burst
+of near-identical 4688 events as traces.
+
+I assess the two are **not distinguishable from the Security log alone**. What would
+discriminate them: the nature of the 4688 burst (thousands of identical short-lived
+`cmd.exe` creations from one parent, at machine speed, is not normal user or service
+activity and favours the deliberate reading); a **4719** or log-configuration change
+correlated in time with other suspicious activity; and whether the volume coincides with
+any independent indicator of compromise. Absent those, the honest position is that
+evidence for the period before record 8378 has been lost and **its absence cannot be read
+as absence of activity**.
+
+**RECOMMENDATION.**
+1. **Work from the export.** `WS01-Security-before.evtx` holds the pre-overwrite state,
+   including the 16 August sequence; treat it as the authoritative copy for that window
+   and preserve it with the case.
+2. **Characterise the 4688 burst.** Pull parent process, command line, count and rate. A
+   dense run of identical `cmd.exe` creations is the signature of deliberate flooding; a
+   varied, human-paced spread is not.
+3. **Check for correlated tampering.** Search 4719 (audit policy changed) and any log
+   size/retention change around the same window.
+4. **Fix the root cause regardless of intent.** A 20 MB Security log on any monitored host
+   retains too little. Raise it and set AutoBackup (`wevtutil sl Security /ab:true
+   /r:false`), and forward events off the host so on-box overwrite stops being fatal.
+5. **Alert on the pattern, not the act.** There is no single event for this. Alert on a
+   sharp rise in `oldestRecordNumber` velocity, or a 4688 flood of low-diversity
+   short-lived processes.
+
+> **Self-attribution.** The overwrite here was performed deliberately as a lab exercise —
+> ~27,800 `cmd.exe` process creations written to a 20 MB log to roll the 16 August events
+> off the front. The log was **not** resized (the intended 1 MB shrink was rejected: the
+> Security log has a 1028 KB minimum, and even a valid small size was declined on this
+> host, so the overwrite was achieved by volume alone). Written as an unattributed triage
+> for practice; it is not a real detection.
 
 ### Finding 2 — Security log cleared on WS01 (Step 6)
 
@@ -749,9 +821,14 @@ Rule: **filter first, limit second.** Use `-FilterHashtable` on live logs and
 `-FilterXPath` on exported `.evtx` files. Keep `Where-Object` for narrowing results that
 are already correctly filtered.
 
-**`wevtutil sl` says "The parameter is incorrect."**
-The size isn't a multiple of 64 KB. Use round values: `1048576` (1 MB), `20971520`
-(20 MB), `1073741824` (1 GB).
+**`wevtutil sl` won't shrink the Security log ("parameter is incorrect" / "size too
+small" / "not valid").**
+The Security log has a **1028 KB minimum** and sizes must be multiples of **64 KB**, so a
+round `1048576` (exactly 1024 KB) is rejected — the smallest valid value is `1114112`
+(1088 KB). Some hosts refuse small sizes outright regardless, from both `wevtutil` and the
+GUI. If yours won't shrink, don't fight it: skip the shrink and overwrite by **volume**
+instead (Step 5.3, flood route). For raising a log, any multiple of 64 KB works, e.g.
+`20971520` (20 MB) or `1073741824` (1 GB).
 
 **"Access is denied" from `wevtutil`, or the Security log won't open.**
 The session isn't elevated. Close it and open with right-click **Start → Terminal
@@ -768,9 +845,12 @@ is about.
 **`Get-WinEvent -ListLog *` prints red errors.**
 Some channels can't be queried even as admin. Add `-ErrorAction SilentlyContinue`.
 
-**The flood didn't overwrite anything.**
-The log wasn't actually shrunk. Run `wevtutil gl Security` and confirm `maxSize` reads
-`1048576`; if not, the `sl` command didn't run elevated.
+**The flood ran but `oldestRecordNumber` hasn't moved.**
+The log isn't full yet. At full size it holds ~29,000 records; until `numberOfLogRecords`
+reaches that ceiling, new events append without evicting. Keep flooding and watch
+`numberOfLogRecords` climb — only once it plateaus does `oldestRecordNumber` start
+advancing. If you intended to shrink first, confirm `wevtutil gl Security` shows the small
+`maxSize`; if it still reads `20971520`, the shrink didn't take (see the size note above).
 
 **You need Module 01's WS01 events back.**
 Read them from `C:\evidence\WS01-Security-before.evtx`. If you skipped 5.1, restore the
