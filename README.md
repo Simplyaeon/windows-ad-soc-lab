@@ -77,7 +77,8 @@ through is [`SOC-Analyst-Roadmap.md`](./SOC-Analyst-Roadmap.md).
 │   └── 04-event-viewer-logging-model.md
 ├── templates/
 │   └── module-lab-template.md    # copy this to start a new module
-└── assets/                       # screenshots / evidence referenced by the labs
+├── assets/                       # screenshots / evidence referenced by the labs
+│   └── xml/                      # exported Event Viewer custom views (Import Custom View)
 ```
 
 ---

@@ -117,28 +117,27 @@ Every lab (via the template) is laid out identically:
   (filter-first, DN vs name, and the eight-hour Pacific/WAT timezone gap — findings
   restated in UTC, Finding 2 closed)
 - ⬜ Modules 02, 03, 05–12 planned but not yet expanded
-- ✅ Git repository initialized; remote is `github.com/Simplyaeon/windows-ad-soc-lab`
-  (nothing pushed yet beyond the initial commit)
+- ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
+  current through Module 04, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
-- ⬜ Module 04 screenshots not yet in `assets/`; custom Views 1 and 3 not built
-- ⚠️ Both VMs' evaluation licences expired and shut down hourly. WS01's rearm is not yet
-  clearing (still in Notification mode); DC01 not yet rearmed. `mod04-start` should not be
-  snapshotted until the licence state is healthy, or the snapshot freezes the expiry
+- ✅ Module 04 evidence complete: eight PNGs in `assets/`, all three custom views built and
+  exported to `assets/xml/` (the reusable deliverable)
+- ✅ Eval-licence issue resolved — both VMs rearmed. `mod04-start` snapshot still to be
+  taken now that the licence state is healthy
 
 ---
 
 ## Next steps
 
-1. **Sort the eval licences.** `slmgr /rearm` + full reboot on both VMs (WS01 needs the
-   reboot to actually take effect), confirm with `slmgr /xpr`, *then* snapshot `mod04-start`.
-2. **Finish Module 04 housekeeping** — six Module 04 screenshots into `assets/`, build
-   custom Views 1 and 3, export the custom-view XMLs (the portfolio deliverable).
-3. **Expand Module 05 (PowerShell for Defenders)** next. Half of it is already in hand from
+1. **Snapshot `mod04-start`** on both VMs now that the licences are rearmed and healthy —
+   this becomes the new baseline (restoring `01-domain-ready` would revert to the expired
+   state and to pre-audit-policy).
+2. **Expand Module 05 (PowerShell for Defenders)** next. Half of it is already in hand from
    the Module 04 run — `-FilterHashtable`/`-FilterXPath`, field-by-name extraction, reading
    `.evtx` — so it consolidates rather than introduces.
-4. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
+3. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
    needs Sysmon; the Sysinternals Suite is already on the lab host, so it only has to
    be moved into the VMs via shared folder or attached ISO.
-5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-6. Keep the **Progress log** in `README.md` and the status tables here updated as modules
+4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+5. Keep the **Progress log** in `README.md` and the status tables here updated as modules
    are completed.

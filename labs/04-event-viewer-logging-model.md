@@ -674,8 +674,16 @@ Companions (the PowerShell proof behind the log-tampering view):
 - [x] `04-1102-powershell.png` — 1102 with Subject `Administrator`, 11:00:51 on WS01
 - [x] `04-104-powershell.png` — 104 with `Channel: Application`, Subject `Administrator`
 
-Still to export: the three custom-view XML files. "I built the saved views a SOC runs on"
-is a concrete thing to point at in an interview.
+The three exported custom views, in `../assets/xml/` — the reusable deliverable. Anyone
+can rebuild them with **Event Viewer → Import Custom View…**:
+
+- [x] `04-view-account-group-changes.xml` — 11 IDs (4720–4767), 30-day window
+- [x] `04-view-failed-authentication.xml` — 4625 / 4771 / 4740, 7-day window
+- [x] `04-view-log-tampering.xml` — 104 / 1100 / 1102 / 4719 across **both** Security and
+      System (the GUI applies every ID to both channels — each simply matches wherever it
+      lands, which is more robust than splitting them)
+
+"I built the saved views a SOC runs on" is a concrete thing to point at in an interview.
 
 ---
 
