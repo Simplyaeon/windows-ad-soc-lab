@@ -676,11 +676,9 @@ is a concrete thing to point at in an interview.
 
 # Findings
 
-**Write these after the run**, in the same **observation → inference → recommendation**
-form as Module 01, with the three kept strictly separate.
-
-Finding 2 is still scaffolded (Step 6 not yet run). Finding 1 is written from the
-2026-08-25 run:
+Written from the run, in the same **observation → inference → recommendation** form as
+Module 01, with the three kept strictly separate. Finding 1 covers the silent evidence
+loss from Step 5 (2026-08-25); Finding 2 covers the log clearing from Step 6 (2026-08-30).
 
 ## Finding 1 — Security log evidence loss on WS01
 
@@ -739,16 +737,61 @@ as absence of activity**.
 > host, so the overwrite was achieved by volume alone). Written as an unattributed triage
 > for practice; it is not a real detection.
 
-### Finding 2 — Security log cleared on WS01 (Step 6)
+## Finding 2 — Security and Application logs cleared on WS01
 
-Observation: the 1102 timestamp, the account, and the 104 in System naming the
-Application log. Inference: T1070.001, and be explicit about **what can no longer be
-determined** — naming the specific gap is what separates a real finding from "logs were
-cleared."
+**OBSERVATION.** On WS01, event **1102** ("The audit log was cleared") is present in the
+Security log, timestamped **2026-08-30 10:00:51 UTC** (11:00:51 local, UTC+1), with
+Subject `Administrator`. It is the earliest record in the log — the Security log holds
+nothing before it. Separately, the **System** log contains a **104** ("The Application log
+... was cleared") with Subject `Administrator` and `Channel: Application`. No comparable
+clear event exists for any other channel.
 
-Note in both that you performed these actions yourself. Writing a lab finding as though
-the activity were unattributed is a good exercise; presenting it as a real detection
-isn't.
+**INFERENCE.** Two log clearances were performed on this host by the `Administrator`
+account: the Security log (attested by its own 1102) and the Application log (attested by
+a 104 in System). This is indicator removal — clearing Windows event logs (**T1070.001**).
+Both events are self-attesting by design: the 1102 is written into the Security log as the
+first record after it is emptied, so the log cannot be cleared without leaving it, and the
+104 for any non-Security log is written to System rather than to the log cleared, so
+erasing the Application log does not erase the record that it was erased. The actor cannot
+suppress either trace by clearing again — a second clear only adds a second event.
+
+What **can** be determined is narrow and firm: that a clear occurred, when, and under
+which account. What **cannot** be determined is most of what matters. The Security log's
+contents prior to 10:00:51 UTC are gone from the live host — any logon, account-management
+or process-creation evidence that predated the clear is unrecoverable from it, and the
+1102 records only that this happened, not what was removed. Attribution stops at the
+account: `Administrator` is a shared, privileged credential (it is also the Subject of
+Findings 1 here and Findings 1–2 in Module 01), so the event names a credential, not a
+person, and does not establish who was at the keyboard. The absence of pre-clear events
+must not be read as absence of activity.
+
+A caveat specific to this host: because the Security log had already been overwritten by
+volume (Finding 1) before it was cleared, the clear destroyed comparatively little that
+the flood had not already rolled off. In the general case a clear is far more destructive,
+because it removes the entire retained window at once rather than only the oldest records.
+
+**RECOMMENDATION.**
+1. **Anchor the timeline on the clear.** 10:00:51 UTC is the reference point: activity the
+   actor sought to remove predates it, and the clear itself is typically among the last
+   on-host actions. Build the timeline outward from it.
+2. **Reconstruct from off-host copies.** The live Security log cannot supply the pre-clear
+   window; recover it from `WS01-Security-before.evtx`, from a SIEM or WEF collector if one
+   exists, and — for domain events — from **DC01**, whose logs are unaffected by a
+   workstation clear. This is the concrete argument for log forwarding.
+3. **Pivot to the logs that were *not* cleared.** Sysmon/Operational, PowerShell/
+   Operational and the Application/System channels on other hosts frequently retain what a
+   Security clear removed. Note which channels the actor cleared and which they missed.
+4. **Confirm the `Administrator` usage was authorised.** No legitimate operational routine
+   clears a workstation's Security log; treat the event as suspicious until a change record
+   accounts for it, and enumerate that account's other activity (its 4624/4672 logons,
+   source host and logon type) around 10:00:51 UTC.
+5. **Alert on 1102 and 104 directly.** Unlike Finding 1, these are single, high-signal
+   events. A Security-log 1102 on a workstation, or a 104 for a security-relevant channel,
+   warrants an alert on its own — and their absence where a gap exists is itself a flag.
+
+> **Self-attribution.** Both clears were performed deliberately as a lab exercise, via
+> Event Viewer → Clear Log, by the `Administrator` account. Written as an unattributed
+> triage for practice; it is not a real detection.
 
 ---
 
