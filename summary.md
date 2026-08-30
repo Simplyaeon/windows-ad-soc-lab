@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-08-24_
+_Last updated: 2026-08-30_
 
 ---
 
@@ -55,7 +55,7 @@ starts from).
 | 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
-| 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | 🟡 Written, not run |
+| 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ⬜ Planned |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
@@ -110,31 +110,35 @@ Every lab (via the template) is laid out identically:
   WS01 joined, both snapshotted at `00-clean-install` and `01-domain-ready`
 - ✅ **Module 01 complete** — rewritten as a step-by-step run sheet, executed end to end
   on the lab, and corrected from what the run exposed. Two findings written up.
-- 🟡 **Module 04 written, not yet run** — six steps, mostly Event Viewer clicks, built
-  around one skill: telling "nothing happened" apart from "I can't see it." Steps 5 and 6
-  deliberately destroy the WS01 Security log (silent overwrite, then an outright clear),
-  so `mod04-start` snapshots are mandatory before starting
+- ✅ **Module 04 complete** — run across three sittings, built around one skill: telling
+  "nothing happened" apart from "I can't see it." Two findings from real telemetry:
+  Finding 1 (evidence loss by volume, `oldestRecordNumber` 1→8378) and Finding 2 (log
+  clearing, 1102 in Security + 104 in System). The run also corrected Module 01
+  (filter-first, DN vs name, and the eight-hour Pacific/WAT timezone gap — findings
+  restated in UTC, Finding 2 closed)
 - ⬜ Modules 02, 03, 05–12 planned but not yet expanded
 - ✅ Git repository initialized; remote is `github.com/Simplyaeon/windows-ad-soc-lab`
   (nothing pushed yet beyond the initial commit)
-- ⬜ Evidence screenshots not yet copied into `assets/`; Finding 2's 4767/4723/4724
-  pivot still outstanding
+- ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
+- ⬜ Module 04 screenshots not yet in `assets/`; custom Views 1 and 3 not built
+- ⚠️ Both VMs' evaluation licences expired and shut down hourly. WS01's rearm is not yet
+  clearing (still in Notification mode); DC01 not yet rearmed. `mod04-start` should not be
+  snapshotted until the licence state is healthy, or the snapshot freezes the expiry
 
 ---
 
 ## Next steps
 
-1. **Copy the four Module 01 screenshots into `assets/`** and close out Finding 2 by
-   pulling 4767 / 4723 / 4724 on DC01.
-2. **Run Module 04**, then expand Module 05, before 02 and 03. The friction during the
-   Module 01 run was not Windows administration — it was log mechanics: too-narrow
-   `StartTime` windows, `Properties[n]` guessing, queries run on the wrong VM, and
-   empty results that were indistinguishable from missing events. Module 04 covers
-   where events live and why they go missing; Module 05 covers `Get-WinEvent` fluency.
-   Every remaining module's Detect section depends on both.
-3. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
+1. **Sort the eval licences.** `slmgr /rearm` + full reboot on both VMs (WS01 needs the
+   reboot to actually take effect), confirm with `slmgr /xpr`, *then* snapshot `mod04-start`.
+2. **Finish Module 04 housekeeping** — six Module 04 screenshots into `assets/`, build
+   custom Views 1 and 3, export the custom-view XMLs (the portfolio deliverable).
+3. **Expand Module 05 (PowerShell for Defenders)** next. Half of it is already in hand from
+   the Module 04 run — `-FilterHashtable`/`-FilterXPath`, field-by-name extraction, reading
+   `.evtx` — so it consolidates rather than introduces.
+4. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
    needs Sysmon; the Sysinternals Suite is already on the lab host, so it only has to
    be moved into the VMs via shared folder or attached ISO.
-4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-4. Keep the **Progress log** in `README.md` and the status tables here updated as modules
+5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+6. Keep the **Progress log** in `README.md` and the status tables here updated as modules
    are completed.

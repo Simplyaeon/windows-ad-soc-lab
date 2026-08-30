@@ -65,6 +65,8 @@ auditpol /set /subcategory:"Kerberos Authentication Service" /success:enable /fa
 
 Each line should answer `The command was successfully executed.`
 
+📸 Evidence: `assets/01-auditpol-setup.png` — the seven subcategories enabled on DC01.
+
 Check it took. Dump everything and filter to the lines that matter:
 
 ```powershell
@@ -412,7 +414,13 @@ Get-WinEvent -FilterHashtable @{ LogName='Security'; Id=4768; StartTime=(Get-Dat
   Format-Table -AutoSize
 ```
 
-📸 **Screenshot the 4740 and the 4771 output.**
+📸 **Screenshot the 4740 and the 4771 output.** Evidence: `assets/01-4771-dc01-failures.png`.
+
+> **Note on the times in that screenshot.** It shows the 4771 failures at **04:14–04:16
+> AM**, which is DC01's *displayed* local time — the DC was on Pacific (UTC−7) when the
+> shot was taken. That is the same moment the findings record as **11:14–11:16 UTC**
+> (04:14 PDT + 7 = 11:14 UTC). The screenshot corroborates the finding; it does not
+> contradict it. See the timezone note in the Findings section.
 
 **The mental model to keep:**
 
@@ -583,7 +591,8 @@ not resolved by further querying — it is resolved by asking the account owner.
    failures against a single account outside business hours.
 8. **Preserve** the DC01 and WS01 Security logs covering 11:00–12:00 UTC on 2026-08-16.
 
-**Evidence:** `assets/01-4740-lockout.png`, `assets/01-4625-failures.png`
+**Evidence:** `assets/01-4740-lockout.png`, `assets/01-4625-failures.png`,
+`assets/01-4771-dc01-failures.png`
 
 > **Finding 2 closed 2026-08-24**, during the Module 04 run. The 4767, 4768 and the
 > absence of 4723/4724 were retrieved using the `Account and group changes` custom view
