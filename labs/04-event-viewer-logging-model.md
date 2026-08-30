@@ -660,16 +660,21 @@ once full.
 
 # Evidence for the portfolio
 
-Save into `../assets/`:
+In `../assets/` (all captured on the 2026-08-30 run):
 
-- [ ] `04-log-inventory.png` — every log that contains records
-- [ ] `04-event-xml-view.png` — the Details → XML view of a 4728
-- [ ] `04-custom-view-account-changes.png` — View 2 on DC01
-- [ ] `04-retention.png` — log sizes and oldest event, both VMs
-- [ ] `04-overwritten-vs-archive.png` — live query 4 (24–25 Aug only), export 14 (incl. 16 Aug)
-- [ ] `04-1102-log-cleared.png` — View 3 with the 1102 and 104
+- [x] `04-log-inventory.png` — every log with records; Store/Operational the noisiest at 16,726
+- [x] `04-event-xml-view.png` — a 4728's Details → XML view, `<System>` vs `<EventData>` (DC01)
+- [x] `04-custom-view-account-changes.png` — the Account and group changes view (DC01)
+- [x] `04-retention.png` — `wevtutil gli` pre-flood: creation 28 July, 9764 records, `oldestRecordNumber 1`, 20 MB
+- [x] `04-overwritten-vs-archive.png` — live 4625 query (4–5, all 24–25 Aug) beside the export (14, incl. 16 Aug)
+- [x] `04-1102-log-cleared.png` — the Log tampering view with the 1102, 104, and two 1100s
 
-Plus the three exported custom-view XML files. "I built the saved views a SOC runs on"
+Companions (the PowerShell proof behind the log-tampering view):
+
+- [x] `04-1102-powershell.png` — 1102 with Subject `Administrator`, 11:00:51 on WS01
+- [x] `04-104-powershell.png` — 104 with `Channel: Application`, Subject `Administrator`
+
+Still to export: the three custom-view XML files. "I built the saved views a SOC runs on"
 is a concrete thing to point at in an interview.
 
 ---
@@ -689,11 +694,15 @@ record numbers are assigned in sequence and never reused, records **1 through 83
 destroyed** — overwritten, not deleted individually. A high volume of **4688** (process
 creation) events dominates the surviving window. The audit subcategory **Process
 Creation** was enabled shortly before the overwriting began, recorded by a **4719** audit
-policy change. A count of **4625** (failed logon) in the live log returns **4 events, all
-dated 24–25 August**; an `.evtx` export taken immediately beforehand contains **14**,
+policy change. A count of **4625** (failed logon) in the live log returns only a handful
+(**4–5 events, all dated 24–25 August** — the count drifts down as the machine keeps
+writing and evicting); an `.evtx` export taken immediately beforehand contains **14**,
 including a five-event failed-logon-then-lockout sequence from **16 August** whose highest
 record number (6007) now falls below `oldestRecordNumber` and is therefore gone from the
 live log.
+
+**Evidence:** `assets/04-overwritten-vs-archive.png`, `assets/04-retention.png`,
+`assets/04-log-inventory.png`.
 
 **INFERENCE.** The 16 August authentication-failure sequence is no longer recoverable
 from the live Security log; it survives only in the pre-overwrite export. Two readings fit
@@ -792,6 +801,10 @@ because it removes the entire retained window at once rather than only the oldes
 > **Self-attribution.** Both clears were performed deliberately as a lab exercise, via
 > Event Viewer → Clear Log, by the `Administrator` account. Written as an unattributed
 > triage for practice; it is not a real detection.
+
+**Evidence:** `assets/04-1102-log-cleared.png` (the Log tampering view — note it also caught
+two 1100 event-logging-service shutdowns from the eval-licence reboots),
+`assets/04-1102-powershell.png`, `assets/04-104-powershell.png`.
 
 ---
 
