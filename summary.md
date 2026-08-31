@@ -56,7 +56,7 @@ starts from).
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
-| 05 | PowerShell for Defenders | 4104, 4103, 4688 | ⬜ Planned |
+| 05 | PowerShell for Defenders | 4104, 4103, 4688 | 🟡 Written, not run |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
 
@@ -116,7 +116,12 @@ Every lab (via the template) is laid out identically:
   clearing, 1102 in Security + 104 in System). The run also corrected Module 01
   (filter-first, DN vs name, and the eight-hour Pacific/WAT timezone gap — findings
   restated in UTC, Finding 2 closed)
-- ⬜ Modules 02, 03, 05–12 planned but not yet expanded
+- 🟡 **Module 05 written, not yet run** — the PowerShell module, built as a ladder that
+  teaches the pipeline one stage at a time and ends with a triage script the reader writes.
+  Security half runs a benign encoded command and detects it via 4104 (decoded script) and
+  4688 (encoded command line). Directly addresses the "commands feel draining, I can't
+  write them myself" feedback
+- ⬜ Modules 02, 03, 06–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 04, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
