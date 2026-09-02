@@ -53,28 +53,44 @@ Log into **WS01** as `administrator@corp.local`.
 Two features have to be on, and both are **off by default** — which is itself the lesson:
 PowerShell's most valuable logging is not enabled out of the box.
 
-**Aim: make PowerShell record what it runs.** Open the Local Group Policy Editor — press
-**Start**, type `gpedit.msc`, Enter.
+**Aim: make PowerShell record what it runs.** Set both directly in the registry — one
+pasteable command per feature. This is what the Group Policy setting writes anyway, it
+applies **immediately** (no `gpupdate`), and it doesn't depend on `gpedit.msc` /
+`gpupdate` being available, which on this lab's WS01 they were not (see the note below).
 
-**Feature 1 — Script Block Logging (event 4104).** Navigate:
-
-**Computer Configuration → Administrative Templates → Windows Components → Windows
-PowerShell → Turn on PowerShell Script Block Logging**
-
-Double-click it → **Enabled** → **OK**.
-
-**Feature 2 — command line in process events (enriches 4688).** Navigate:
-
-**Computer Configuration → Administrative Templates → System → Audit Process Creation →
-Include command line in process creation events**
-
-Double-click it → **Enabled** → **OK**.
-
-Close gpedit, then apply the policy now rather than waiting:
+**Feature 1 — Script Block Logging (event 4104):**
 
 ```powershell
-gpupdate /force
+New-Item -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Name EnableScriptBlockLogging -Value 1 -Type DWord
 ```
+
+**Feature 2 — command line in process events (enriches 4688):**
+
+```powershell
+New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' -Name ProcessCreationIncludeCmdLine_Enabled -Value 1 -Type DWord
+```
+
+Confirm both read `1`:
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' -Name EnableScriptBlockLogging
+Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' -Name ProcessCreationIncludeCmdLine_Enabled
+```
+
+> **Script Block Logging is read when a PowerShell session starts.** The window you set
+> the key in won't have it active — **open a fresh Terminal** before running the encoded
+> command in Step 5, or no 4104 is written. Feature 2 applies to any new process
+> immediately.
+
+> **The GUI route, if your host cooperates.** The same two settings live in `gpedit.msc`
+> under *Computer Configuration → Administrative Templates*: Feature 1 at *Windows
+> Components → Windows PowerShell → Turn on PowerShell Script Block Logging*, Feature 2 at
+> *System → Audit Process Creation → Include command line in process creation events*.
+> After enabling, they apply on `gpupdate /force` or a reboot. On this lab's WS01,
+> `gpupdate` was `not recognized` (a broken System32/PATH or policy-engine state), so the
+> registry route above is the reliable one and is what the run used. *Found 2026-09-01.*
 
 > **Why both?** 4104 records the *PowerShell* that ran, decoded. 4688 records *any*
 > process starting, and with Feature 2 on, its **full command line** — so you catch
@@ -555,9 +571,9 @@ Block Logging is **T1562.001**, and the gap it leaves is the tell.
 # If something goes wrong
 
 **No 4104 events at all.**
-Script Block Logging didn't take. Re-check Step 0.2 in `gpedit.msc`, run `gpupdate /force`,
-then re-run an encoded command *after* — logging only captures what runs once it's on.
-Confirm the channel exists and is enabled:
+Most likely the encoded command ran in the **same session** where you set the key — Script
+Block Logging is read at session start, so open a **fresh Terminal** and run it again.
+Otherwise confirm the key reads `1` (Step 0.2) and the channel is enabled:
 `Get-WinEvent -ListLog 'Microsoft-Windows-PowerShell/Operational' | Select-Object IsEnabled, RecordCount`.
 
 **4688 shows no `CommandLine` field.**
