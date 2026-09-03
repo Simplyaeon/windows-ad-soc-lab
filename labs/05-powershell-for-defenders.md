@@ -491,13 +491,16 @@ The chain here is benign, but the detection is exactly the real one.
 
 # Step 7 — Evidence for the portfolio
 
-Save into `../assets/` (spaceless `05-*` names):
+In `../assets/` (spaceless `05-*` names, captured on the 2026-09-03 run). The two detection
+screenshots are the deliverable — the pipeline/`-FilterHashtable`/`triage.ps1` work was
+personal learning and isn't documented:
 
-- [ ] `05-pipeline-ladder.png` — the Step 1 query built up (the busy-process pipeline)
-- [ ] `05-filterhashtable.png` — a `-FilterHashtable` query returning events
-- [ ] `05-triage-script.png` — your `triage.ps1` output
-- [ ] `05-4104-decoded.png` — the 4104 showing your decoded encoded command
-- [ ] `05-4688-commandline.png` — the 4688 showing `-EncodedCommand` on the command line
+- [x] `05-4104-decoded.png` — 4104 Script Block Logging at 07:53:27 UTC: the decoded
+      `Write-Output "hello from an encoded command "` *and* the encoded invocation line,
+      both as script blocks from the same run
+- [x] `05-4688-commandline.png` — 4688 Process Creation with the `-EncodedCommand` blob on
+      `powershell.exe`'s command line (three runs, 07:52–07:53 UTC, two with `-WindowStyle
+      Hidden`)
 
 Then a few sentences in your own words: what encoding hides, what 4104 recovers, and why
 you need both logs.
@@ -511,12 +514,60 @@ separate. One is set up for you:
 
 ### Finding — Encoded PowerShell executed on WS01
 
-Observation: the 4688 command line proving `-EncodedCommand` (and `-WindowStyle Hidden`)
-was used, with timestamps in **UTC**, and the corresponding 4104 with the decoded script.
-Inference: **T1059.001** (PowerShell), **T1027** (obfuscated), **T1140** (decode) — and be
-explicit about what the logs *do* settle (that encoding was used, and what the decoded
-content was) versus what they don't (whether it was interactive or scripted, and where the
-launching process came from). Note honestly that you ran this yourself.
+*Run 2026-09-03. Both hosts are on WAT (UTC+1); the screenshots display local WAT, so the
+UTC times below are the displayed time minus one hour (taskbar read 8:58 / 9:22 local at
+capture).*
+
+**Observation.** On WS01, `powershell.exe -EncodedCommand` (base64 of UTF-16LE) was run
+three times benignly — once plain, twice with `-WindowStyle Hidden` — each printing
+`hello from an encoded command`. The runs left correlated telemetry in two channels:
+
+- **Security, Event ID 4688 (Process Creation).** Three `powershell.exe -EncodedCommand
+  VwBy…` process creations at **07:52:26, 07:53:10 and 07:53:27 UTC**, the `CommandLine`
+  field populated with the encoded blob (and `-WindowStyle Hidden` on two of the three),
+  from image `C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe`.
+- **`Microsoft-Windows-PowerShell/Operational`, Event ID 4104 (Script Block Logging), at
+  07:53:27 UTC.** Two script blocks from that execution: the **decoded payload**
+  `Write-Output "hello from an encoded command "` (ScriptBlock ID `602eb08f-…`) *and* the
+  **encoded invocation line itself** `powershell.exe -EncodedCommand VwBy… -WindowStyle
+  Hidden` (ScriptBlock ID `b17c4a86-…`).
+
+The **07:53:27 UTC** execution is therefore captured from both sides: 4688's encoded command
+line and 4104's decoded payload are the *same run* — a matched pair, not separate events.
+Two points worth stating precisely. First, 4104 alone recorded **both** the obfuscated
+invocation and the deobfuscated payload, so Script Block Logging exposed the technique end
+to end without needing 4688 at all; 4688 corroborated with process-creation context (the
+`powershell.exe` image path and that two runs carried `-WindowStyle Hidden`). Second, the
+4688 `CommandLine` field was **blank in the prior session (2026-09-02)** and populated here;
+consistent with `ProcessCreationIncludeCmdLine_Enabled` taking effect only for processes
+*created after* the setting became active, not a fault in auditing (`auditpol` reported
+Process Creation = Success throughout).
+
+**Inference.** I assess with high confidence that encoded PowerShell execution occurred and
+that the decoded intent was recovered from the logs: **T1059.001** (PowerShell),
+**T1027** (Obfuscated/Encoded), **T1140** (Deobfuscate/Decode). The logs *do* settle that
+encoding was used and *what the decoded content was* — 4104 records the script block after
+PowerShell decodes it, so obfuscation does not defeat it. The logs *do not* settle whether
+the command was typed interactively or driven by a script, nor the parent-process lineage
+(the 4688 view captured here did not include `ParentProcessName`). Stated plainly: I ran
+this myself as a lab exercise; on a real host the 4104 content would be the pivot point for
+working out what the payload does and what it touched next.
+
+The two channels cover each other's blind spots — 4688 shows *that* `powershell.exe`
+launched and that its command line was encoded (but not the payload); 4104 shows the
+payload in plaintext, and here even showed the encoded invocation, but is blind to
+non-PowerShell processes. This is defence-in-depth applied to telemetry: an attacker who
+evades one source still trips the other, because they observe the same event from opposite
+sides.
+
+**Recommendation.** Hunt 4104 at `Level=3` first
+(`@{ LogName='Microsoft-Windows-PowerShell/Operational'; Id=4104; Level=3 }`) — PowerShell's
+own suspicious-flag — then correlate each hit to its 4688 by time *and* pull
+`ParentProcessName` to recover the lineage this run's view lacked. Alert on `-EncodedCommand`
+combined with `-WindowStyle Hidden` as a high-signal pair. Note the analyst trap: a rule
+that greps command lines for the literal string `EncodedCommand` will also flag the
+analyst's own hunt query — scope such rules to process creation of `powershell.exe` /
+`pwsh.exe`, not to any command line containing the word.
 
 A second finding worth writing if you disabled and re-enabled logging: turning off Script
 Block Logging is **T1562.001**, and the gap it leaves is the tell.

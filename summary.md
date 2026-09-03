@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-02_
+_Last updated: 2026-09-03_
 
 ---
 
@@ -56,7 +56,7 @@ starts from).
 | 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
-| 05 | PowerShell for Defenders | 4104, 4103, 4688 | 🟡 Written, not run |
+| 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
 
@@ -116,15 +116,15 @@ Every lab (via the template) is laid out identically:
   clearing, 1102 in Security + 104 in System). The run also corrected Module 01
   (filter-first, DN vs name, and the eight-hour Pacific/WAT timezone gap — findings
   restated in UTC, Finding 2 closed)
-- 🟡 **Module 05 written, partly run** (as of 2026-09-02). Steps 0–3 **done and working**:
-  Script Block Logging and command-line-in-4688 enabled by registry (see blockers below),
-  and the pipeline ladder run end to end — `Get-Process | Where-Object | Sort-Object |
-  Select-Object` built one stage at a time, `Get-Member` for discovering properties,
-  `-FilterHashtable` assembled from scratch, and event fields pulled by name
-  (`NewProcessName`, `CommandLine`, `SubjectUserName` all confirmed present on 4688).
-  **Step 4 (triage.ps1) abandoned** — see blockers. **Step 5 (encoded command) is where
-  the run stopped**, at the point of running `powershell.exe -EncodedCommand` in a *fresh*
-  terminal, then reading 4104 for the decoded script and 4688 for the encoded command line
+- ✅ **Module 05 complete** (2026-09-03). Steps 0–3 run as a ladder — the pipeline built one
+  verb at a time (`Get-Process | Where-Object | Sort-Object | Select-Object`), `Get-Member`
+  for discovering properties, `-FilterHashtable` assembled from scratch, fields pulled by
+  name (`NewProcessName`, `CommandLine`, `SubjectUserName` confirmed on 4688). **Step 4
+  (triage.ps1) abandoned** (Notepad/shell working-directory mismatch). **Steps 5–6 run:**
+  benign `powershell.exe -EncodedCommand` (plain + `-WindowStyle Hidden`, three runs) →
+  **4688** carried the encoded command line and **4104** the decoded payload for the *same*
+  execution at **07:53:27 UTC** — a matched pair. 4104 alone logged both the obfuscated
+  invocation and the decoded script. Logging enabled by **registry**, not `gpedit.msc`
 - ⬜ Modules 02, 03, 06–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 04, evidence included
@@ -134,7 +134,7 @@ Every lab (via the template) is laid out identically:
 - ✅ Eval-licence issue resolved — both VMs rearmed. `mod04-start` snapshot still to be
   taken now that the licence state is healthy
 
-### Open blockers on WS01 (found during the Module 05 run, 2026-09-02)
+### Open blockers on WS01 (found during the Module 05 run; status as of 2026-09-03)
 
 Three things on this host misbehaved. None block the detection content, but they cost most
 of a sitting and are worth fixing or routing around:
@@ -144,11 +144,12 @@ of a sitting and are worth fixing or routing around:
   registry (`EnableScriptBlockLogging`, `ProcessCreationIncludeCmdLine_Enabled`), which
   applies immediately and is now what the lab documents. Suggests a broken System32/PATH
   or policy-engine state.
-- **4688's `CommandLine` field is present but always blank**, even after setting the
-  registry key, rebooting, and generating fresh processes — while `auditpol` reports
-  Process Creation auditing as **Success** and 4688s are written normally (2,462 in three
-  days). Not yet explained. Step 6's *primary* detection is 4104, which is a separate
-  mechanism, so the module still works; the 4688 command-line angle is degraded.
+- **4688's `CommandLine` field ✅ RESOLVED (2026-09-03).** It was blank in the 2026-09-02
+  session but populated on encoded runs the next day (`powershell.exe -EncodedCommand VwBy…`
+  at 07:52–07:53 UTC). The field populates only for processes *created after*
+  `ProcessCreationIncludeCmdLine_Enabled` takes effect — the earlier blanks were pre-setting
+  processes, not a fault (`auditpol` reported Success throughout). Both detection angles now
+  work.
 - **`triage.ps1` never produced output when run as a file**, although every query inside
   it returns correct results when pasted into the terminal (2,462 events; extraction and
   `Group-Object` both verified by hand). Most likely Notepad and the shell pointing at
@@ -163,21 +164,16 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-1. **Finish Module 05 from Step 5.** In a *fresh* Terminal (Script Block Logging is read at
-   session start), run the benign `powershell.exe -EncodedCommand` from Step 5, then read
-   **4104** in `Microsoft-Windows-PowerShell/Operational` — the decoded script appears in
-   plain text despite being run as base64, which is the module's whole point. Then 4688 for
-   the encoded command line, if the blank-`CommandLine` blocker gets resolved.
-2. **Snapshot `mod04-start`** on both VMs now that the licences are rearmed and healthy —
+1. **Snapshot `mod04-start`** on both VMs now that the licences are rearmed and healthy —
    this becomes the new baseline (restoring `01-domain-ready` would revert to the expired
    state and to pre-audit-policy).
-3. **Consider rebuilding WS01** from a fresh Windows 11 Enterprise eval ISO if the blockers
+2. **Consider rebuilding WS01** from a fresh Windows 11 Enterprise eval ISO if the blockers
    above keep costing time. Three unexplained policy-related faults on one host is a
    pattern, and a rebuild resets the eval clock too. Module 05's Steps 0–3 would need
    re-running, but they're quick now that they're known-good.
-4. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
+3. **Then 02 and 03**, which add new detection surfaces but block nothing. Module 03
    needs Sysmon; the Sysinternals Suite is already on the lab host, so it only has to
    be moved into the VMs via shared folder or attached ISO.
-5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-6. Keep the **Progress log** in `README.md` and the status tables here updated as modules
+4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+5. Keep the **Progress log** in `README.md` and the status tables here updated as modules
    are completed.

@@ -38,46 +38,64 @@ rather than trying to inspect anything directly.
 README.md                  landing page — module index + dated progress log
 summary.md                 current status and next steps — read this first
 SOC-Analyst-Roadmap.md     the full 12-module plan
-labs/                      one file per module (00, 01, 04 written)
+labs/                      one file per module (00, 01, 04, 05 written)
 templates/                 module-lab-template.md
 assets/                    screenshots referenced by the labs
 ```
 
 ## Where things stand
 
-*As of 2026-08-25. `summary.md` carries the fuller version.*
+*As of 2026-09-02. `summary.md` carries the fuller version.*
 
-Modules 00 and 01 **complete**, both findings closed. Module 01's Finding 2 was resolved
-during the Module 04 run: 4767 unlock at 11:23:00 UTC by `CORP\Administrator`, 4768
-success 29 seconds later, and no 4723/4724 anywhere in 30 days, which excludes the
-competing hypothesis.
+Modules 00, 01 and 04 **complete**, all findings closed, evidence in `assets/`, and
+`main` pushed to GitHub through Module 04. Module 01's Finding 2 was resolved during the
+Module 04 run: 4767 unlock at 11:23:00 UTC by `CORP\Administrator`, 4768 success 29
+seconds later, and no 4723/4724 anywhere in 30 days, which excludes the competing
+hypothesis.
 
-**Module 04 is written and nearly run.** Steps 0–5 done. **Step 6 (clear the log → find
-the 1102) is in progress** — at the point of reading the 1102's Subject via
-`.Event.UserData.LogFileCleared`, then clearing Application to see the 104 land in System.
+Module 04 produced two findings worth carrying forward. **Finding 1 — evidence loss by
+volume:** the log would not shrink on this host (Security log min 1028 KB, 64 KB
+granularity; even valid small sizes refused, GUI and `wevtutil` both), so ~27,800
+`cmd.exe` process creations pushed `oldestRecordNumber` from 1 to 8378, evicting the
+16 August 4625 sequence (highest RecordId 6007). Live 4625 query returned 4; the
+pre-flood export `C:\evidence\WS01-Security-before.evtx` still holds all 14.
+`oldestRecordNumber` is the evidence-loss odometer: it never decreases, never reuses
+numbers, so `oldest − 1` is how many records the log has destroyed in its life.
+**Finding 2 — log clearing:** 1102 in Security, 104 in System. All three custom views
+were built and exported to `assets/xml/` — the reusable deliverable.
 
-Step 5 ran on 2026-08-25 and produced Finding 1: the log would **not** shrink on this host
-(Security log min 1028 KB, 64 KB granularity; even valid small sizes refused, GUI and
-`wevtutil` both), so evidence was overwritten by **volume** — ~27,800 `cmd.exe` process
-creations pushed `oldestRecordNumber` from 1 to 8378, evicting the 16 August 4625 sequence
-(highest RecordId 6007). Live 4625 query now returns 4 (all 24–25 Aug); the pre-flood
-export `C:\evidence\WS01-Security-before.evtx` still holds all 14. `oldestRecordNumber` is
-the evidence-loss odometer: it never decreases, never reuses numbers, so `oldest − 1` is
-how many records the log has destroyed in its life.
+**Module 05 (PowerShell for Defenders) is complete** (run 2026-09-03). Steps 0–3 done as a
+ladder; Step 4 (`triage.ps1`) abandoned; Steps 5–6 run. Benign `powershell.exe
+-EncodedCommand` (plain + `-WindowStyle Hidden`, three runs) produced a matched pair at
+**07:53:27 UTC**: **4688** with the encoded command line and **4104** with the decoded
+payload for the same execution — and 4104 alone logged *both* the obfuscated invocation and
+the decoded script. Screenshots display local WAT; UTC is one hour earlier. Logging enabled
+*by registry*, not `gpedit.msc`.
 
-Then **05 (PowerShell for Defenders)**, then 02 and 03. The Module 01 run showed the
-bottleneck is log mechanics, not Windows administration.
+### Open blockers on WS01 (found 2026-09-02; CommandLine resolved 2026-09-03)
 
-Measured on WS01, 2026-08-24 — useful baselines: Security log holds **8764 records /
-7.07 MB of 20 MB**, oldest event 28 July, ~845 bytes per event, ~0.26 MB/day, so ~76 days
-to fill and nothing has ever been overwritten.
+- **`gpupdate` is "not recognized as a cmdlet"**, as is `gpedit.msc` for applying policy.
+  Worked around by setting both Module 05 features directly in the registry
+  (`EnableScriptBlockLogging`, `ProcessCreationIncludeCmdLine_Enabled`), which applies
+  immediately and is what the lab now documents.
+- **4688's `CommandLine` field — ✅ resolved 2026-09-03.** Blank on 2026-09-02, populated the
+  next day on encoded runs (07:52–07:53 UTC). The field populates only for processes *created
+  after* `ProcessCreationIncludeCmdLine_Enabled` takes effect; the earlier blanks were
+  pre-setting processes, not a fault (`auditpol` reported Success throughout).
+- **`triage.ps1` produced no output when run as a file**, though every query inside it
+  works pasted into the terminal. Most likely Notepad and the shell in different working
+  directories — `notepad $PWD\triage.ps1` avoids it.
 
-Outstanding: Module 01's four screenshots and Module 04's still aren't in `assets/`
-(incl. `04-overwritten-vs-archive.png`, the live-4 vs export-14 side-by-side); Module 04's
-custom Views 1 and 3 not built; Step 6 not finished; DC01 **and WS01** eval licences both
-expired and shutting down hourly, neither rearmed (WS01 died mid-flood during Step 5 —
-harmless, record numbers persist across reboot, resume the batch); `mod04-start` was not
-confirmed taken; **nothing pushed to GitHub** (7 commits local).
+Three unexplained policy-related faults on one host is a pattern; **rebuilding WS01** from
+a fresh Windows 11 Enterprise eval ISO is on the table if they keep costing time.
+
+Both eval licences are **rearmed and healthy**. Measured on WS01, 2026-08-24 — useful
+baselines: Security log holds **8764 records / 7.07 MB of 20 MB**, oldest event 28 July,
+~845 bytes per event, ~0.26 MB/day, so ~76 days to fill.
+
+Outstanding: finish Module 05 from Step 5; `mod04-start` snapshot still not taken on
+either VM (restoring `01-domain-ready` would revert to the expired licence *and* to
+pre-audit-policy); then 02 and 03 (03 needs Sysmon moved into the VMs).
 
 ## How to work on this
 
