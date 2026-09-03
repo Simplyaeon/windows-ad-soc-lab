@@ -45,7 +45,7 @@ assets/                    screenshots referenced by the labs
 
 ## Where things stand
 
-*As of 2026-09-02. `summary.md` carries the fuller version.*
+*As of 2026-09-03. `summary.md` carries the fuller version.*
 
 Modules 00, 01 and 04 **complete**, all findings closed, evidence in `assets/`, and
 `main` pushed to GitHub through Module 04. Module 01's Finding 2 was resolved during the
