@@ -53,7 +53,7 @@ starts from).
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
 | 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
-| 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⬜ Planned |
+| 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | 🟡 Written, not run |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
@@ -125,14 +125,16 @@ Every lab (via the template) is laid out identically:
   **4688** carried the encoded command line and **4104** the decoded payload for the *same*
   execution at **07:53:27 UTC** — a matched pair. 4104 alone logged both the obfuscated
   invocation and the decoded script. Logging enabled by **registry**, not `gpedit.msc`
-- ⬜ Modules 02, 03, 06–12 planned but not yet expanded
+- 🟡 **Module 02 (NTFS Permissions & File Auditing) written, not yet run** (2026-09-04).
+  WS01-only run sheet: lock/camera (DACL/SACL) as separate switches, 4663/4670/4907.
+- ⬜ Modules 03, 06–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
-  current through Module 04, evidence included
+  current through Module 05, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
 - ✅ Module 04 evidence complete: eight PNGs in `assets/`, all three custom views built and
   exported to `assets/xml/` (the reusable deliverable)
-- ✅ Eval-licence issue resolved — both VMs rearmed. `mod04-start` snapshot still to be
-  taken now that the licence state is healthy
+- ✅ Eval-licence issue resolved — both VMs rearmed. `mod04-start` snapshot **taken**
+  (2026-09-04); `mod02-start` is the pre-run baseline for Module 02.
 
 ### Open blockers on WS01 (found during the Module 05 run; status as of 2026-09-03)
 
@@ -164,9 +166,10 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-1. **Snapshot `mod04-start`** on both VMs now that the licences are rearmed and healthy —
-   this becomes the new baseline (restoring `01-domain-ready` would revert to the expired
-   state and to pre-audit-policy).
+1. **Run Module 02 on WS01** — it's written (`labs/02-ntfs-permissions.md`). Take
+   `mod02-start`, then work Steps 1–6: lock `C:\Finance`, enable File System auditing +
+   SACL, access it as `fin_user` (allowed) and `helpdesk` (denied), read 4663/4670/4907,
+   write the finding. `mod04-start` is already taken as the clean baseline.
 2. **Consider rebuilding WS01** from a fresh Windows 11 Enterprise eval ISO if the blockers
    above keep costing time. Three unexplained policy-related faults on one host is a
    pattern, and a rebuild resets the eval clock too. Module 05's Steps 0–3 would need

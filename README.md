@@ -42,7 +42,7 @@ through is [`SOC-Analyst-Roadmap.md`](./SOC-Analyst-Roadmap.md).
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
 | 01 | [Users & Groups](./labs/01-users-and-groups.md) | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
-| 02 | NTFS Permissions & File Auditing | 4663, 4670, 4907 | ⚪ Planned |
+| 02 | [NTFS Permissions & File Auditing](./labs/02-ntfs-permissions.md) | 4663, 4670, 4907 | 🟡 Written, not yet run |
 | 03 | Windows Registry | Sysmon 13, 4657 | ⚪ Planned |
 | 04 | [Event Viewer & the Logging Model](./labs/04-event-viewer-logging-model.md) | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | [PowerShell for Defenders](./labs/05-powershell-for-defenders.md) | 4104, 4103, 4688 | ✅ Complete |
@@ -74,6 +74,7 @@ through is [`SOC-Analyst-Roadmap.md`](./SOC-Analyst-Roadmap.md).
 ├── labs/                         # one file per module — the write-ups
 │   ├── 00-lab-build.md           # VM + domain build — start here
 │   ├── 01-users-and-groups.md
+│   ├── 02-ntfs-permissions.md
 │   ├── 04-event-viewer-logging-model.md
 │   └── 05-powershell-for-defenders.md
 ├── templates/
@@ -125,3 +126,4 @@ This is a **defensive learning lab**, but treat the repo as public:
 | 2026-08-31 | 05 — PowerShell for Defenders | 🟡 Written, not yet run. Built as a ladder — the pipeline taught one stage at a time (`Get-Process` → `Where-Object` → `Select-Object` → `Sort-Object`), then `Get-WinEvent -FilterHashtable` and field-by-name extraction assembled from parts, ending in a `triage.ps1` the reader writes themselves. Security half: run a benign base64 `-EncodedCommand` (and `-WindowStyle Hidden`), then watch **4104** Script Block Logging record the *decoded* script while **4688** shows the encoded command line — the two-angle lesson. Enables Script Block Logging and command-line-in-4688 via `gpedit.msc`. |
 | 2026-08-30 | 04 — Event Viewer & Logging Model | ✅ **Complete.** Run across three sittings. Findings written from real telemetry: **Finding 1** — evidence loss by volume (the Security log refused to shrink on this host, so ~27,800 `cmd.exe` 4688s pushed `oldestRecordNumber` 1→8378, rolling the 16 Aug 4625 sequence off; live 4625 count 4 vs export 14). **Finding 2** — `Administrator` cleared Security (1102, self-written) at 10:00:51 UTC and Application (104, landing in System). The run also corrected Module 01: filter-first-not-starved (1 vs 11), 4728's member field is a DN, and both VMs were eight hours out on the Windows install-default Pacific timezone — findings restated in UTC, Module 01 Finding 2 closed. |
 | 2026-09-03 | 05 — PowerShell for Defenders | ✅ **Complete.** Steps 0–3 run as a ladder (pipeline built one verb at a time, `-FilterHashtable` and field-by-name extraction assembled from parts). Step 4 `triage.ps1` abandoned (Notepad/shell working-directory mismatch). Steps 5–6 run: benign `powershell.exe -EncodedCommand` (plain + `-WindowStyle Hidden`), then **4104** Script Block Logging recovered the *decoded* payload and **4688** the encoded command line for the *same* execution at **07:53:27 UTC** — a matched pair (4104 alone logged both the obfuscated invocation and the decoded script), resolving the prior blank-`CommandLine` blocker (the field populates only for processes created after `ProcessCreationIncludeCmdLine` takes effect). Finding written in observation → inference → recommendation form. Logging enabled by **registry**, not `gpedit.msc` (`gpupdate`/`gpedit` broken on this host). |
+| 2026-09-04 | 02 — NTFS Permissions & File Auditing | 🟡 Written, not yet run. WS01-only run sheet built around one idea: **the lock (DACL) and the camera (SACL) are separate switches** — a folder can be locked and log nothing. Lock `C:\Finance` to a Finance group (GUI-first, `icacls`/`Get-Acl` to read), test a denied user, enable File System auditing + a SACL, then read **4663** (Success vs Failure via Keywords), **4670** (permission change) and **4907** (audit-setting change). Extends the Module 04 "nothing happened vs can't see it" lesson to the file level. |

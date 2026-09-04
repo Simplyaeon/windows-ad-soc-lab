@@ -14,7 +14,7 @@ loop: **Build** an admin capability → **Break/Observe** by generating activity
 
 Domain `corp.local` (NetBIOS `CORP`), VirtualBox internal network `lab-net`, no
 internet by design. Snapshots: `00-clean-install` (pre-domain), `01-domain-ready`,
-`mod01-start`; `mod04-start` still to be taken. Credentials are documented in
+`mod01-start`; `mod04-start` taken 2026-09-04. Credentials are documented in
 `labs/00-lab-build.md` — throwaway lab passwords, never reused anywhere real.
 
 **Both VMs are on `W. Central Africa Standard Time` (UTC+1)** as of 2026-08-24. They ran
@@ -38,7 +38,7 @@ rather than trying to inspect anything directly.
 README.md                  landing page — module index + dated progress log
 summary.md                 current status and next steps — read this first
 SOC-Analyst-Roadmap.md     the full 12-module plan
-labs/                      one file per module (00, 01, 04, 05 written)
+labs/                      one file per module (00, 01, 02, 04, 05 written)
 templates/                 module-lab-template.md
 assets/                    screenshots referenced by the labs
 ```
@@ -93,9 +93,10 @@ Both eval licences are **rearmed and healthy**. Measured on WS01, 2026-08-24 —
 baselines: Security log holds **8764 records / 7.07 MB of 20 MB**, oldest event 28 July,
 ~845 bytes per event, ~0.26 MB/day, so ~76 days to fill.
 
-Outstanding: finish Module 05 from Step 5; `mod04-start` snapshot still not taken on
-either VM (restoring `01-domain-ready` would revert to the expired licence *and* to
-pre-audit-policy); then 02 and 03 (03 needs Sysmon moved into the VMs).
+Outstanding: run Module 02 (written 2026-09-04, `labs/02-ntfs-permissions.md` — WS01-only,
+DACL/SACL as separate switches, 4663/4670/4907); `mod04-start` taken 2026-09-04 as the clean
+baseline (restoring `01-domain-ready` reverts to the expired licence *and* pre-audit-policy).
+Then 03 (needs Sysmon moved into the VMs).
 
 ## How to work on this
 
