@@ -21,56 +21,28 @@ internet by design. Snapshots: `00-clean-install` (pre-domain), `01-domain-ready
 on the Windows install default of Pacific until then, so any timestamp recorded before
 that date and *displayed* rather than read from XML is eight hours out.
 
-**DC01's Windows Server evaluation licence has expired** — it shuts itself down every
-hour (`1074`, "license period ... has expired"). Not yet fixed; `slmgr /rearm` + reboot
-is the fix, and `slmgr /dlv` shows the remaining rearm count. Two consequences: schedule
-DC01 work in short blocks, and note that **the licence state lives in the snapshots**,
-so restoring `01-domain-ready` reinstates the expired licence. Rearm *before* taking
-`mod04-start`. WS01's Windows 11 evaluation will hit the same wall later.
+**Both eval licences are rearmed and healthy.** DC01's Windows Server evaluation had
+expired and was shutting the VM down hourly (`1074`, "license period ... has expired");
+`slmgr /rearm` + reboot fixed it, and `slmgr /dlv` shows the remaining rearm count. Two
+things still follow from it: **the licence state lives in the snapshots**, so restoring
+`01-domain-ready` reinstates the *expired* licence (use `mod04-start`, taken 2026-09-04
+post-rearm, as the clean baseline), and WS01's Windows 11 evaluation will hit the same
+wall later.
 
 **The VMs run on a separate Windows PC.** They cannot be reached from a Claude Code
 session on this Mac. All lab commands are for the user to run there; ask for output
 rather than trying to inspect anything directly.
 
-## Layout
-
-```
-README.md                  landing page — module index + dated progress log
-summary.md                 current status and next steps — read this first
-SOC-Analyst-Roadmap.md     the full 12-module plan
-labs/                      one file per module (00, 01, 02, 04, 05 written)
-templates/                 module-lab-template.md
-assets/                    screenshots referenced by the labs
-```
-
 ## Where things stand
 
-*As of 2026-09-03. `summary.md` carries the fuller version.*
+**Read `summary.md` first** — it carries the current status, the per-module findings, and
+the next steps, and is the file to update as modules complete. Modules 00, 01, 04 and 05
+are complete with findings written and evidence in `assets/`; `main` is pushed through
+Module 05. Module 02 is the module in flight (below). The rest are planned — see
+`SOC-Analyst-Roadmap.md`.
 
-Modules 00, 01 and 04 **complete**, all findings closed, evidence in `assets/`, and
-`main` pushed to GitHub through Module 04. Module 01's Finding 2 was resolved during the
-Module 04 run: 4767 unlock at 11:23:00 UTC by `CORP\Administrator`, 4768 success 29
-seconds later, and no 4723/4724 anywhere in 30 days, which excludes the competing
-hypothesis.
-
-Module 04 produced two findings worth carrying forward. **Finding 1 — evidence loss by
-volume:** the log would not shrink on this host (Security log min 1028 KB, 64 KB
-granularity; even valid small sizes refused, GUI and `wevtutil` both), so ~27,800
-`cmd.exe` process creations pushed `oldestRecordNumber` from 1 to 8378, evicting the
-16 August 4625 sequence (highest RecordId 6007). Live 4625 query returned 4; the
-pre-flood export `C:\evidence\WS01-Security-before.evtx` still holds all 14.
-`oldestRecordNumber` is the evidence-loss odometer: it never decreases, never reuses
-numbers, so `oldest − 1` is how many records the log has destroyed in its life.
-**Finding 2 — log clearing:** 1102 in Security, 104 in System. All three custom views
-were built and exported to `assets/xml/` — the reusable deliverable.
-
-**Module 05 (PowerShell for Defenders) is complete** (run 2026-09-03). Steps 0–3 done as a
-ladder; Step 4 (`triage.ps1`) abandoned; Steps 5–6 run. Benign `powershell.exe
--EncodedCommand` (plain + `-WindowStyle Hidden`, three runs) produced a matched pair at
-**07:53:27 UTC**: **4688** with the encoded command line and **4104** with the decoded
-payload for the same execution — and 4104 alone logged *both* the obfuscated invocation and
-the decoded script. Screenshots display local WAT; UTC is one hour earlier. Logging enabled
-*by registry*, not `gpedit.msc`.
+Only what a session can't get from those files is kept here: the blockers, the measured
+baselines, and the traps.
 
 ### Open blockers on WS01 (found 2026-09-02; CommandLine resolved 2026-09-03)
 
@@ -89,14 +61,29 @@ the decoded script. Screenshots display local WAT; UTC is one hour earlier. Logg
 Three unexplained policy-related faults on one host is a pattern; **rebuilding WS01** from
 a fresh Windows 11 Enterprise eval ISO is on the table if they keep costing time.
 
-Both eval licences are **rearmed and healthy**. Measured on WS01, 2026-08-24 — useful
-baselines: Security log holds **8764 records / 7.07 MB of 20 MB**, oldest event 28 July,
-~845 bytes per event, ~0.26 MB/day, so ~76 days to fill.
+Measured on WS01, 2026-08-24 — useful baselines: Security log holds **8764 records /
+7.07 MB of 20 MB**, oldest event 28 July, ~845 bytes per event, ~0.26 MB/day, so ~76
+days to fill.
 
-Outstanding: run Module 02 (written 2026-09-04, `labs/02-ntfs-permissions.md` — WS01-only,
-DACL/SACL as separate switches, 4663/4670/4907); `mod04-start` taken 2026-09-04 as the clean
-baseline (restoring `01-domain-ready` reverts to the expired licence *and* pre-audit-policy).
-Then 03 (needs Sysmon moved into the VMs).
+**Module 02 (NTFS Permissions & File Auditing) is nearly complete** (2026-09-05, WS01).
+Steps 1–5 done and Step 6 proven: `C:\Finance` locked to a `Finance` group, File System auditing
++ SACL on, and both halves of the evidence in the log — `fin_user` allowed as **4663 Success**,
+`helpdesk` denied as **4656 Failure**. Three snags fixed along the way:
+`Authenticated Users:(OI)(CI)(M)` was a *second* broad inherited ACE that kept `helpdesk`
+writable after `Users` was removed (`icacls /remove:g` fixed it; lab Step 3 updated to remove
+both); the SACL didn't persist on first apply (re-added — `InheritanceFlags` is
+`ContainerInherit, ObjectInherit`, so files *are* covered, and the folder-only hypothesis was
+wrong); and **the denied access logged nothing at all until the `Handle Manipulation`
+subcategory was enabled**. That last one is the module's real lesson: the SACL's `AuditFlags`
+and `auditpol /get /subcategory:"File System"` can *both* read `Success and Failure` and
+denials still vanish, because both of those govern **4663 — which only fires on access that
+*succeeded***. A refusal is a **4656**, fed by a third switch that is off by default. Check it
+*before* generating denied access, not after. Step 5 now uses `runas /user:<u> powershell` with
+explicit `Out-File`/`Get-Content` instead of `runas ... notepad`, which silently redirects a
+blocked save and leaves no evidence the folder was ever touched. Remaining: 4670/4907
+(Step 6.3), screenshots, finding write-up.
+
+After 02: Module 03 (needs Sysmon moved into the VMs).
 
 ## How to work on this
 
