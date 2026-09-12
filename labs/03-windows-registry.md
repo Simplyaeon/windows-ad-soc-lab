@@ -974,15 +974,15 @@ Save to `../assets/` using the spaceless `03-*` scheme.
 - [x] `03-event1-commandline.png` — the Sysmon **Event 1** field dump for `reg.exe`:
       `CommandLine`, `ParentImage`, `User`, `IntegrityLevel`, 63 ms before its Event 13. The
       evidence that turns "a value changed" into "this account ran this command"
+- [x] `03-4657-one-of-three.png` — the three-hour 4657 query returning **five events, all
+      from the one SACL'd key**, and nothing whatever from the other two. Side by side with
+      `03-sysmon-13-all-three.png`, those two images *are* Finding 2
 - [x] `03-notepad-parentimage-blank.png` — the Store-packaged Notepad events with an empty
       `ParentImage`. Supports the parked observation in Notes & gotchas, and is why the
       write → execution chain was left unproven
 
 **Outstanding:**
 
-- [ ] `03-4657-one-of-three.png` — **the important one.** The same-window 4657 query
-      returning `LabPersist` alone. Side by side with `03-sysmon-13-all-three.png`, those two
-      images *are* Finding 2
 - [ ] `03-auditpol-registry.png` — `auditpol /get /subcategory:"Registry"` reading Success
       and Failure, alongside the Module 02 subcategories
 - [ ] `03-sacl-run-key.png` — the Auditing tab on `HKLM\…\Run`, `Everyone` / Type: All,
@@ -1086,13 +1086,34 @@ the `Registry` audit subcategory enabled, a SACL auditing `Set Value` on
 - **Security log, Event 4657:** returned **`LabPersist` only** — one of three.
 - **Sysmon, Event 13:** returned **all three**.
 
-The negative result carries its own control. The 4657 query that failed to return
-`LabPersistUser` and `LabPersistOnce` **did return `LabPersist`**, from the same command, the
-same time window, the same log and the same host. The query, the window, the log's health and
-the host selection are therefore all excluded as explanations by the query's own positive
-result — the four standard causes of empty `Get-WinEvent` output (wrong machine, window too
-narrow, log rotated, channel disabled) cannot account for an absence that is selective within
-a single successful query.
+Widening the 4657 query to a three-hour window covering the whole sitting sharpens it further.
+It returned exactly five value names:
+
+```
+LabPersist
+LabPersist
+LabPersistRegNow
+LabPersistPS
+LabPersistBoot
+```
+
+**All five are writes to the one SACL'd key**, `HKLM\…\CurrentVersion\Run` — the two
+`LabPersist` entries consistent with its creation and its later deletion, the other three with
+the removal of the previous sitting's values from that same key. (The create-versus-delete
+split is inference from the sequence; `OperationType` on each event is what would settle it
+definitively.)
+
+Across that identical window, the two unwatched keys saw **five** operations —
+`LabPersistUser` deleted, re-planted and deleted again in `HKCU\…\Run`, and `LabPersistOnce`
+planted and deleted in `HKLM\…\RunOnce`. **None of them produced a 4657.**
+
+The negative result therefore carries its own control, twice over. The query that returned
+nothing for those two keys **returned five events for the third**, from the same command, the
+same window, the same log and the same host. The four standard causes of empty `Get-WinEvent`
+output — wrong machine, window too narrow, log rotated, channel disabled — cannot account for
+an absence that is *selective by key* within a single successful query. And the events it did
+return span creation *and* deletion, so the instrument demonstrably covers the full lifecycle
+of a value; it simply never saw the other two keys at all.
 
 **Inference.** I assess with **high confidence** that this is a **coverage** failure and not a
 configuration failure. Native registry auditing worked exactly as designed **for the one key

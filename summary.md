@@ -232,13 +232,20 @@ Every lab (via the template) is laid out identically:
   `RegistryEvent onmatch="include"` config at `C:\Tools\sysmon-registry.xml`). Modules 06 and
   07 inherit it.
 
-  **Evidence: five PNGs in `assets/` (`03-*`)** — the Sysmon config readback, the all-three
-  Event 13 output, the `DeleteValue` paths, the Event 1 command-line dump, and the blank
-  `ParentImage` shot. **One still outstanding and it is the important one:**
-  `03-4657-one-of-three.png`, the same-window 4657 query returning `LabPersist` alone —
-  paired with the Event 13 shot, those two images *are* Finding 2. Note that two of the
-  committed screenshots carry this host's **unredacted machine SID**; a deliberate call for a
-  throwaway isolated VM, not a pattern to repeat.
+  **A wider three-hour 4657 query sharpened Finding 2 further.** It returned exactly five
+  value names — `LabPersist` twice, plus `LabPersistRegNow`, `LabPersistPS` and
+  `LabPersistBoot` — **every one of them a write to the single SACL'd key**, spanning both
+  creation and deletion. Across the same window the two unwatched keys saw five operations
+  (`LabPersistUser` deleted, re-planted and deleted; `LabPersistOnce` planted and deleted) and
+  produced **no 4657 at all**. So the absence is selective *by key* inside one successful
+  query, and the instrument demonstrably covers a value's full lifecycle — it simply never saw
+  the other two keys.
+
+  **Evidence: six PNGs in `assets/` (`03-*`)** — the Sysmon config readback, the all-three
+  Event 13 output, the five-event 4657 result, the `DeleteValue` paths, the Event 1
+  command-line dump, and the blank `ParentImage` shot. Note that two carry this host's
+  **unredacted machine SID**; a deliberate call for a throwaway isolated VM, not a pattern to
+  repeat.
 - ⬜ Modules 06–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 05, evidence included
@@ -278,10 +285,9 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-1. **Capture the one outstanding Module 03 screenshot** — `03-4657-one-of-three.png`. Everything
-   else in the module is complete; this is the missing half of Finding 2's visual evidence.
-   Optionally reconstruct the first sitting's three (`auditpol`, the SACL Auditing tab, a 4657
-   detail pane), which were never captured.
+1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
+   Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
+   were never captured. Module 03 is otherwise complete.
 2. **Module 06 (Windows Firewall)** or **07 (RDP)** next — both benefit from Sysmon already
    being installed and configured on WS01, which was the main reason Module 03 came first.
 3. **Optionally settle the anomaly** with the fresh-SACL test described above. It needs a clean
