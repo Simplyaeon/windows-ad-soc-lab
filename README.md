@@ -109,6 +109,12 @@ This is a **defensive learning lab**, but treat the repo as public:
 - The `.gitignore` excludes VM disk images, ISOs, and exported logs — don't force-add
   them (they're huge and may contain host data).
 - Screenshots may leak host machine names, IPs, or usernames. Crop or redact.
+- **The Module 03 screenshots deliberately retain the lab domain SID.** Two of the `03-*`
+  images show `S-1-5-21-…` in full. That is a considered choice, not an oversight: a domain
+  SID is only useful alongside the `krbtgt` hash (which requires Domain Admin on the DC) or
+  with network reachability to `corp.local`, and this forest lives on an isolated VirtualBox
+  internal network with no internet and no route from anywhere. The same identifier would be
+  redacted without hesitation in a production environment — as would the passwords above.
 - Techniques appear **only** to produce and explain their detections, inside an
   isolated network — keep that framing so the repo reads clearly as defensive work.
 
