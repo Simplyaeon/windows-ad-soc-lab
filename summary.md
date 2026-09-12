@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-08_
+_Last updated: 2026-09-12_
 
 ---
 
@@ -34,6 +34,7 @@ starts from).
 | `SOC-Analyst-Roadmap.md` | The full 12-module plan across Windows Administration (Part I) and Active Directory (Part II), plus a mini-SIEM cross-cutting module and an 8-week pacing table |
 | `labs/00-lab-build.md` | **Module 00** — VM creation, Windows installs, `lab-net` setup, DC promotion and domain join, with troubleshooting |
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
+| `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -54,7 +55,7 @@ starts from).
 |---|--------|----------------|--------|
 | 01 | Users & Groups | 4720, 4728, 4624, 4625, 4740, 4771 | ✅ Complete |
 | 02 | NTFS Permissions & File Auditing | 4663, 4656, 4670, 4907 | ✅ Complete |
-| 03 | Windows Registry | Sysmon 13, 4657 | ⬜ Planned |
+| 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
@@ -167,7 +168,78 @@ Every lab (via the template) is laid out identically:
   four-gate table, Step 4.2 `Change permissions`, Steps 6.3/6.4, event-ID table, evidence
   checklist, gotchas — plus **two findings** in observation → inference → recommendation
   form. **Eight screenshots** in `assets/` (`02-*`).
-- ⬜ Modules 03, 06–12 planned but not yet expanded
+- ✅ **Module 03 (The Windows Registry & Persistence) complete** — written 2026-09-10, run
+  2026-09-10 → 2026-09-12 on WS01 across two sittings.
+
+  **The module's thesis proved itself inside a single eight-minute window.** Three identical
+  `notepad.exe` persistence writes, one host, both instruments configured and running:
+
+  | UTC (2026-09-12) | Value | Key | Tool |
+  |---|---|---|---|
+  | 21:00:22.880 | `LabPersist` | `HKLM\…\Run` | `reg.exe` |
+  | 21:06:25.500 | `LabPersistUser` | `HKU\S-1-5-21-…-500\…\Run` | `powershell.exe`, **no elevation** |
+  | 21:08:15.088 | `LabPersistOnce` | `HKLM\…\RunOnce` | `reg.exe` |
+
+  **Native 4657 returned one of the three. Sysmon Event 13 returned all three.**
+
+  **Finding 2** is the result, and the negative half carries its own control: the 4657 query
+  that failed to return two of the writes *did* return the third — same command, same window,
+  same log, same host — so the four standard causes of empty `Get-WinEvent` output (wrong
+  machine, narrow window, rotation, channel off) are excluded by the query's own positive
+  result. That makes it a **coverage** failure, not a configuration failure. Native auditing
+  worked perfectly for the one key it was pointed at; `HKCU\…\Run` and `HKLM\…\RunOnce` had
+  no SACL, so those writes were never auditable events at all. The two misses include the only
+  write needing **no privileges** and the only one that **self-deletes**. The generalisation:
+  native registry auditing can only report on keys someone anticipated in advance, so it is
+  structurally unable to surface a persistence location nobody thought to watch.
+
+  **Finding 1 came out stronger than the plan called for.** Sysmon **Event 1** recorded
+  `reg.exe` at **21:08:15.025 UTC — 63 milliseconds before** the Event 13 it caused — carrying
+  the full `CommandLine`, `ParentImage` (`powershell.exe`), `User` (`CORP\Administrator`),
+  `IntegrityLevel` (`High`), `LogonId` and a SHA256. "A registry value changed" became "this
+  account, from an elevated PowerShell, ran this exact command and this is what it changed,"
+  joinable on `ProcessGuid`. The execution half was deliberately **not** claimed: a candidate
+  `Notepad.exe` exists at 21:04:16 UTC, a minute after a reboot and consistent in timing with a
+  `Run`-key firing, but its `ParentImage` was empty, so nothing ties it to the logon. Recorded
+  as suggestive timing, not as a link in the chain.
+
+  **Four corrections the run forced into the lab file** — each one had been asserted wrongly or
+  incompletely beforehand:
+
+  - **Sysmon logs the per-user hive as `HKU\<SID>\…`, never `HKCU\`.** The exact mirror of
+    4657's `\REGISTRY\MACHINE\…`. Neither log prints the shorthand you type, so a hunt string
+    built from either returns nothing with no error to explain why.
+  - **A deleted *value* is an Event 12 with `EventType = DeleteValue`, not an Event 13.** A
+    13-only rule watches the attacker arrive and never leave.
+  - **Sysmon's bare-install defaults log no registry events whatever** — measured at 30 records
+    across IDs 1/4/5/16 only. The config *adds* registry visibility; it does not trim a flood.
+    "Sysmon is installed" and "Sysmon would have caught that" are different claims.
+  - **`Details` preserves case exactly as typed** (`notepad.exe` and `Notepad.exe` both appeared
+    in one session), so value-data hunts must be case-insensitive.
+
+  **Two things observed and recorded honestly as unexplained, neither promoted to a finding:**
+  `sihost.exe` writes a matching `…\RunNotification\StartupTNoti<name>` entry for every `Run`
+  value and deletes it when the value goes — none for `RunOnce` — on a **variable** delay (10 s
+  and 2m36s in the same session) with a DWORD payload of unknown meaning; and `ParentImage`
+  comes back **empty** for Store-packaged applications, which means parent-process correlation
+  cannot be assumed available and needs a fallback.
+
+  The **2026-09-10 anomaly stays parked** — the first two `reg add` writes produced no 4657, no
+  cause established, and its discriminating test still needs a clean pre-write snapshot that
+  does not exist.
+
+  **Sysmon v15.15 is left installed and configured on WS01** (schema 4.90, four-rule
+  `RegistryEvent onmatch="include"` config at `C:\Tools\sysmon-registry.xml`). Modules 06 and
+  07 inherit it.
+
+  **Evidence: five PNGs in `assets/` (`03-*`)** — the Sysmon config readback, the all-three
+  Event 13 output, the `DeleteValue` paths, the Event 1 command-line dump, and the blank
+  `ParentImage` shot. **One still outstanding and it is the important one:**
+  `03-4657-one-of-three.png`, the same-window 4657 query returning `LabPersist` alone —
+  paired with the Event 13 shot, those two images *are* Finding 2. Note that two of the
+  committed screenshots carry this host's **unredacted machine SID**; a deliberate call for a
+  throwaway isolated VM, not a pattern to repeat.
+- ⬜ Modules 06–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 05, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
@@ -206,21 +278,16 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-1. **Commit and push Module 02.** Lab file, two findings, eight `02-*` screenshots, plus
-   the README and `summary.md` status updates. Screenshots show `WS01`, `corp.local` and
-   the lab account names — consistent with what the `01-*` and `04-*` shots already
-   publish, so nothing new is exposed. `main` will then be current through Module 05 *and*
-   Module 02.
-2. **Module 03 (Windows Registry)** is the natural next build — it adds a new detection
-   surface and blocks nothing. It needs **Sysmon** moved into the VMs; the Sysinternals
-   Suite is already on the lab host, so it only has to travel via shared folder or an
-   attached ISO. Registry auditing has the same SACL-plus-subcategory shape Module 02 just
-   taught, so the four-gate lesson transfers directly to 4657.
-3. **Consider rebuilding WS01** from a fresh Windows 11 Enterprise eval ISO if the
-   `gpupdate`/`gpedit` blockers keep costing time. A rebuild resets the eval clock too.
-   Module 05's Steps 0–3 would need re-running, but they're quick now that they're
-   known-good. Note that Module 02's audit configuration (three subcategories plus the
-   `C:\Finance` SACL) would also have to be redone.
-4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-5. Keep the **Progress log** in `README.md` and the status tables here updated as modules
-   are completed.
+1. **Capture the one outstanding Module 03 screenshot** — `03-4657-one-of-three.png`. Everything
+   else in the module is complete; this is the missing half of Finding 2's visual evidence.
+   Optionally reconstruct the first sitting's three (`auditpol`, the SACL Auditing tab, a 4657
+   detail pane), which were never captured.
+2. **Module 06 (Windows Firewall)** or **07 (RDP)** next — both benefit from Sysmon already
+   being installed and configured on WS01, which was the main reason Module 03 came first.
+3. **Optionally settle the anomaly** with the fresh-SACL test described above. It needs a clean
+   baseline snapshot, which does not currently exist.
+4. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
+   has risen again: Module 02's audit config, Module 03's `Registry` subcategory + Run-key SACL,
+   and now the **completed** Sysmon install and config would all need redoing.
+5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+6. Keep the **Progress log** in `README.md` and the status tables here updated as modules complete.
