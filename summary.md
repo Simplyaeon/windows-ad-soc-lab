@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-12_
+_Last updated: 2026-09-13_
 
 ---
 
@@ -35,6 +35,7 @@ starts from).
 | `labs/00-lab-build.md` | **Module 00** — VM creation, Windows installs, `lab-net` setup, DC promotion and domain join, with troubleshooting |
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
+| `labs/06-windows-firewall.md` | **Module 06, written 2026-09-13, not yet run** — the first two-VM module since 01; one blocked connection, found in both `pfirewall.log` and event 5157 |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -58,7 +59,7 @@ starts from).
 | 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
-| 06 | Windows Firewall | 5156, 5157, 4946 | ⬜ Planned |
+| 06 | Windows Firewall | 5157, 4946/4948, 5152 | 🟡 Sitting 1 of 3 run |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
 
 ### Part II — Active Directory
@@ -288,8 +289,11 @@ Modules 01/04/05 is sound and needs no change.
 1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
    Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
    were never captured. Module 03 is otherwise complete.
-2. **Module 06 (Windows Firewall)** or **07 (RDP)** next — both benefit from Sysmon already
-   being installed and configured on WS01, which was the main reason Module 03 came first.
+2. **Run Module 06 (Windows Firewall)** — written 2026-09-13, three sittings, needs **both**
+   VMs. `wf.msc` confirmed working on WS01, so the build steps are GUI clicks despite
+   `gpedit.msc` being broken. Take **`mod06-start` snapshots on both VMs first** — Module 03
+   skipped its snapshot and that is why its anomaly is still untestable. Module **07 (RDP)**
+   follows; both benefit from Sysmon already being installed on WS01.
 3. **Optionally settle the anomaly** with the fresh-SACL test described above. It needs a clean
    baseline snapshot, which does not currently exist.
 4. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
