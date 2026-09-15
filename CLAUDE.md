@@ -36,11 +36,10 @@ rather than trying to inspect anything directly.
 ## Where things stand
 
 **Read `summary.md` first** — it carries the current status, the per-module findings, and
-the next steps, and is the file to update as modules complete. Modules 00, 01, 02, 04 and 05
-are complete with findings written and evidence in `assets/`; `main` is pushed through
-Module 02. **Module 03 is complete** (run 2026-09-10 → 2026-09-12) — see below for what it
-established and the two things it left unexplained.
-The rest are planned — see `SOC-Analyst-Roadmap.md`.
+the next steps, and is the file to update as modules complete. Modules 00–05 are complete
+with findings written and evidence in `assets/`; `main` is pushed through **Module 03**.
+**Module 06 is IN PROGRESS** (written 2026-09-13; sittings 1–3 run 2026-09-14 → 2026-09-15,
+not finished) — see its section below. The rest are planned — see `SOC-Analyst-Roadmap.md`.
 
 Only what a session can't get from those files is kept here: the blockers, the measured
 baselines, and the traps.
@@ -200,6 +199,100 @@ Windows writes to constantly when idle. Per Module 04, that is how older evidenc
 
 **Do not edit Winlogon `Userinit` or `Shell` on WS01.** A bad value boots to a blank screen with no
 shell, recoverable only by snapshot restore. `Run` keys fail harmlessly; those two do not.
+
+### Module 06 (Windows Firewall) — IN PROGRESS, not complete
+
+Written 2026-09-13 (`labs/06-windows-firewall.md`); sittings 1–3 run 2026-09-14 → 2026-09-15,
+**both VMs**. The run sheet has been rewritten from the run and its findings carry verified
+observations; **inference and recommendation sections are still stubs**, evidence is not yet in
+`assets/`, and Steps 8–9 are not done.
+
+**The module's result, established by controlled experiment and not by argument.** Three TCP
+knocks from WS01 to DC01 port 9999 (nothing listening, no rule) produced **nothing** in
+`pfirewall.log` and **nothing** in 5157 — while both instruments were demonstrably alive (the
+text file held an unrelated ICMP `DROP`; the 5157 query returned unrelated events). They appear
+only as **5152**, whose subcategory is **off by default**. One variable changed at a time:
+
+| Listening on the port? | Explicit block rule? | `Filter Origin` | App in 5152 | In `pfirewall.log`? |
+|---|---|---|---|---|
+| No | No | `Stealth` | `-` (PID 0) | No |
+| No | **Yes** (readback-verified) | `Stealth` | `-` (PID 0) | No |
+| **Yes** (`TcpListener`) | Yes | `Query User Default` | **`powershell.exe`** | **Yes** |
+
+So **stealth mode intercepts packets to closed ports before rules are consulted**, `pfirewall.log`
+only records a drop *after* that point, and 5152 names the **local** process only where one exists.
+A port scan is overwhelmingly closed ports, so the firewall's own log file is blind to it.
+
+**Verified during the run — only what the user pasted back:**
+
+| Fact | Evidence |
+|---|---|
+| **4946 and 4948 carry no account** | fields are Profile Changed / Rule ID / Rule Name; `.Message` adds nothing; `Event.System.Security` **empty on both** — the 4946 run as a control |
+| Firewall rule changes are **routine noise** on DC01 | **4** × 4946 and **7** × 4948 with nobody attacking; **3 of the 4946s appeared overnight unattended**, which made the hand-written one the **oldest** — `-MaxEvents 1` returns the wrong event |
+| `pfirewall.log` stamps **local** time | header line `#Time Format: Local`; the event log stores UTC, so the text file reads one hour *ahead* here |
+| `Protocol: 6` = TCP | IANA number; the event does not spell it out |
+| **`Test-NetConnection` creates no process**, so no 4688 | a ±1-minute window around a knock returned **zero** 4688s, against 308 in the surrounding 20 minutes |
+| WS01's firewall records **nothing** about its own outbound knock | WS01's 5152 channel proven alive first (**7** unrelated inbound drops, e.g. to `10.0.0.20:53`), then no knock in it — outbound default is allow, so nothing was blocked to log |
+| DC01 `Firewall Policy` | `BlockInbound,AllowOutbound`, Public profile |
+| Ping was already allowed before the module started | two enabled allow rules on DC01 — `File and Printer Sharing (Echo Request - ICMPv4-In)` on Public, and an **AD Domain Controller** echo rule on **Any**. DC promotion enables its own firewall rules; live since Module 00 |
+| **Block beats allow** at the network layer | one scoped block rule overrode both allow rules; ping went `True` → `False` → `True` on delete. Same principle as NTFS |
+| `wf.msc` **works on WS01** | unlike `gpedit.msc`/`gpupdate`, which remain broken. Firewall build steps can be GUI clicks |
+
+**Traps this module added, beyond the ones already listed further down:**
+
+- **A knock on a closed port is a *packet*, never a *connection*.** `Filtering Platform
+  Connection` (5156/5157) and `Filtering Platform Packet Drop` (5152/5153) are **separate
+  subcategories**. Watching only the first gives silence with no error.
+- **An expectation that cannot fail is not evidence.** Step 7.1 was written as "run the query on
+  WS01 and expect nothing" — but WS01's packet-drop subcategory was still `No Auditing`, so the
+  empty result was meaningless. It only became evidence after the switch was enabled and the
+  channel proved itself with 7 unrelated events. **Verify the instrument before trusting a
+  silence you predicted.**
+- **Process-creation logging records a program *starting*, not what it does afterwards.** A shell
+  open for an hour writes one 4688 and then does a hundred invisible things. Cmdlet activity
+  inside an existing session is not visible to 4688 at all.
+
+**Unexplained, recorded as observations, no cause established:**
+
+1. **DC01 sits on the `Public` firewall profile** while WS01 is on `Domain`, with the domain
+   otherwise healthy. Only `LogBlocked` and per-rule profile ticks are affected, so it did not
+   block the module — but **read the active profile on each machine separately**, never assume.
+2. **Row 3 of the matrix reads `Query User Default`, not the block rule's name**, although that
+   rule was present, enabled and matching. Precedence between the query-user filter and an
+   explicit rule was **not investigated**.
+3. **WS01 wrote 308 × 4688 in 20 minutes** on 2026-09-15, against Module 04's measured ~0.26
+   MB/day in August. The window included a boot, so it may not be a real rate change. **Not
+   measured properly.** If it is real, WS01's Security log fills in about a day.
+
+**Lab state left behind (2026-09-15):**
+
+- **`mod06-start` snapshots exist on both VMs.**
+- **Audit switches left ON deliberately**, both VMs: `Filtering Platform Connection` = Failure,
+  `MPSSVC Rule-Level Policy Change` = Success, `Filtering Platform Packet Drop` = Failure.
+  **`Filtering Platform Connection` Success is deliberately OFF** — it logs every *allowed*
+  connection and would destroy the log per Module 04.
+- **`LogBlocked` = True**, on **DC01/Public** and **WS01/Domain** — the profiles that are actually
+  active, which differ per machine.
+- `LAB Block Ping from WS01` **deleted and confirmed** (ping returned `True`).
+- **`LAB Block TCP9999 from WS01` — deletion NOT confirmed.** The user was asked to delete it and
+  never reported back. **Check before assuming.** Likewise `$listener.Stop()` was issued in a block
+  the user ran but never separately confirmed; port 9999 should be closed, verify rather than trust.
+- **Sysmon on WS01 is still registry-only**, so **Event 3 (network connection) is NOT enabled** —
+  which is exactly what the unfinished part of the module needs.
+
+**What is left to finish Module 06:** add a **narrowly scoped** `NetworkConnect` rule to
+`C:\Tools\sysmon-registry.xml` on WS01 (scope it tightly — WS01 talks to DC01 constantly and a
+broad rule floods), re-knock, and recover the sending process and account as **Sysmon Event 3**.
+That closes the attribution gap the module found: neither firewall log nor 4688 can name what made
+the connection. Then Steps 8–9, the screenshots, and the inference/recommendation halves of
+Findings 1, 4 and 5.
+
+**Two screenshots already exist in the user's `Downloads`** (the `Filter Origin: Stealth` event and
+the rule readback) and should be moved into `assets/` as `06-5152-stealth.png` and
+`06-rule-verified.png`. Nothing else was captured, and **no `.evtx` export was taken** — a
+deliberate decision by the user on 2026-09-15, on the grounds that lab activity is regenerable on
+demand. If logs roll, the timestamps cited in the findings must be regenerated and the findings
+edited to match.
 
 ## How to work on this
 

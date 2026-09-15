@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-13_
+_Last updated: 2026-09-15_
 
 ---
 
@@ -35,7 +35,7 @@ starts from).
 | `labs/00-lab-build.md` | **Module 00** — VM creation, Windows installs, `lab-net` setup, DC promotion and domain join, with troubleshooting |
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
-| `labs/06-windows-firewall.md` | **Module 06, written 2026-09-13, not yet run** — the first two-VM module since 01; one blocked connection, found in both `pfirewall.log` and event 5157 |
+| `labs/06-windows-firewall.md` | **Module 06, IN PROGRESS** — written 2026-09-13, sittings 1–3 run 2026-09-14 → 2026-09-15 and rewritten from the run; the first two-VM module since 01. A knock on a closed port turns out to be invisible to `pfirewall.log` and to 5157, and visible only as **5152** |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -59,7 +59,7 @@ starts from).
 | 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
-| 06 | Windows Firewall | 5157, 4946/4948, 5152 | 🟡 Sitting 1 of 3 run |
+| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — 3 sittings run, not finished |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
 
 ### Part II — Active Directory
@@ -247,7 +247,75 @@ Every lab (via the template) is laid out identically:
   command-line dump, and the blank `ParentImage` shot. Note that two carry this host's
   **unredacted machine SID**; a deliberate call for a throwaway isolated VM, not a pattern to
   repeat.
-- ⬜ Modules 06–12 planned but not yet expanded
+- 🟡 **Module 06 (Windows Firewall) — IN PROGRESS, not complete.** Written 2026-09-13, run
+  across three sittings 2026-09-14 → 2026-09-15 on **both VMs** (the first two-VM module
+  since 01). The run sheet has been rewritten from the run; **findings carry verified
+  observations but their inference/recommendation halves are still stubs**, evidence is not
+  yet in `assets/`, and Steps 8–9 are not done.
+
+  **The module's thesis was wrong, and disproving it is the result.** It was built on "the
+  text file is thin, event 5157 is rich." Three TCP knocks from WS01 to DC01 port 9999 —
+  nothing listening, no rule permitting it — produced **nothing in `pfirewall.log` and
+  nothing in 5157**, twice, in windows twenty minutes apart. Both instruments were
+  demonstrably alive: the text file held an unrelated ICMP `DROP` at 08:41:56 local, and the
+  5157 query returned unrelated events under the identical command. The knocks appear only
+  as **5152**, whose subcategory is **off by default** and which the run sheet's Step 2 had
+  omitted.
+
+  **A controlled experiment then established why**, one variable at a time:
+
+  | Listening on the port? | Explicit block rule? | `Filter Origin` | App named in 5152 | In `pfirewall.log`? |
+  |---|---|---|---|---|
+  | No | No | `Stealth` | `-` (PID 0) | No |
+  | No | **Yes** | `Stealth` | `-` (PID 0) | No |
+  | **Yes** | Yes | `Query User Default` | **`powershell.exe`** | **Yes** |
+
+  Row 2's rule was verified by readback rather than trusted — `Enabled: True`,
+  `Direction: Inbound`, `Action: Block`, `Profile: Public`, `Protocol: TCP`,
+  `LocalPort: 9999` — and changed nothing. Row 3 changed one thing: a
+  `System.Net.Sockets.TcpListener` holding the port open. Everything moved at once.
+
+  So **stealth mode intercepts packets to closed ports before any rule is consulted**;
+  `pfirewall.log` records a drop only once the packet gets past that point; and 5152 names
+  the **local** process only where one exists. Since a port scan is overwhelmingly attempts
+  against *closed* ports, **the firewall's own log file is structurally blind to port
+  scanning**, and so is 5157.
+
+  **The second half of the module is attribution, and nothing in the lab currently has it.**
+  Three places checked, all empty: DC01's firewall saw the packet but cannot see inside WS01;
+  WS01's firewall recorded nothing because its outbound traffic is allowed (channel proven
+  alive first with **7** unrelated inbound drops); and WS01's process log has **zero** 4688s
+  in a ±1-minute window around a knock, against 308 in the surrounding twenty minutes —
+  because `Test-NetConnection` is a cmdlet running inside an already-open shell, not a
+  program that starts. **Process-creation logging records a program starting, not what it
+  does afterwards.**
+
+  Alongside that, from sitting 1: **4946 and 4948 record no account** — fields limited to
+  Profile Changed / Rule ID / Rule Name, `.Message` adding nothing, `Event.System.Security`
+  empty on both with the 4946 run as a control — on a host carrying **four** 4946s and
+  **seven** 4948s with nobody attacking it, three of them written by Windows unattended
+  overnight. So the module's consistent subject is: **Windows records a great deal about what
+  happened and remarkably little about who did it.**
+
+  **Three things the run corrected in the run sheet.** DC01 was powered off at the start and
+  WS01 logged in normally on **cached credentials**, with the first symptom appearing two
+  steps later as the wrong firewall profile (Step 0.2 now boots DC01 first). Ping already
+  worked, because **DC promotion enables its own echo-request rule** on the `Any` profile,
+  live since Module 00 — so Step 3 became a **block** rule, demonstrating **block beats
+  allow** at the network layer and yielding a deletion to catch. And **Finding 5**: the run
+  sheet listed four gates, enabled three, and chose a break condition neither remaining
+  instrument could see — the module reproduced its own central lesson on its own author,
+  recorded deliberately rather than quietly patched.
+
+  **Unexplained, recorded as observations with no cause established:** DC01 sits on the
+  `Public` profile while WS01 is on `Domain`; row 3 of the matrix reads `Query User Default`
+  rather than naming the block rule; and WS01 wrote 308 × 4688 in twenty minutes against
+  Module 04's ~0.26 MB/day August measurement, on a window that included a boot.
+
+  **Left to finish:** a narrowly scoped `NetworkConnect` rule added to Sysmon on WS01 to
+  recover the sending process as **Event 3**, then Steps 8–9, screenshots, and the
+  inference/recommendation halves of Findings 1, 4 and 5.
+- ⬜ Modules 07–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 05, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
@@ -289,11 +357,14 @@ Modules 01/04/05 is sound and needs no change.
 1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
    Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
    were never captured. Module 03 is otherwise complete.
-2. **Run Module 06 (Windows Firewall)** — written 2026-09-13, three sittings, needs **both**
-   VMs. `wf.msc` confirmed working on WS01, so the build steps are GUI clicks despite
-   `gpedit.msc` being broken. Take **`mod06-start` snapshots on both VMs first** — Module 03
-   skipped its snapshot and that is why its anomaly is still untestable. Module **07 (RDP)**
-   follows; both benefit from Sysmon already being installed on WS01.
+2. **Finish Module 06** — three sittings are run and the lab work is nearly done. What
+   remains: (a) add a **narrowly scoped** `NetworkConnect` rule to
+   `C:\Tools\sysmon-registry.xml` on WS01 and re-knock, to recover the sending process and
+   account as Sysmon **Event 3** — WS01 talks to DC01 constantly, so scope it tightly or it
+   floods; (b) **verify `LAB Block TCP9999 from WS01` was actually deleted on DC01** and that
+   port 9999 is closed — neither was confirmed; (c) Steps 8–9, the screenshots (two already
+   sit in the user's `Downloads`), and the inference/recommendation halves of Findings 1, 4
+   and 5. Then Module **07 (RDP)**, which inherits the Sysmon install.
 3. **Optionally settle the anomaly** with the fresh-SACL test described above. It needs a clean
    baseline snapshot, which does not currently exist.
 4. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost

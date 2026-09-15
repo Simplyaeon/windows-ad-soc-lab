@@ -19,17 +19,20 @@ a connection was refused, can you find it afterwards, and can you say who caused
 You will cause exactly one refusal — WS01 knocking on a door that is closed on DC01 — and
 then go and find it.
 
-The lesson that makes this a detection module: **the same refusal is recorded in two
-places, and they tell you very different amounts.**
+**The answer this module actually produces, established by experiment on 2026-09-14:**
 
-| Where | What it tells you |
-|---|---|
-| A plain text file on disk (`pfirewall.log`) | A packet to this address and port was dropped, at this time. That's all |
-| The Windows event log (event **5157**) | The same refusal, plus which **program** tried, which **account** it was running as, and which direction |
+> A knock on a **closed** port is discarded by Windows **stealth mode** before any firewall
+> rule is consulted. It is **not** written to `pfirewall.log`, and it is **not** an event
+> **5157**. The only instrument that records it is event **5152**, and that subcategory is
+> **off by default**.
 
-The text file is nearly anonymous. The event log entry is something you could put in a
-ticket. Seeing both for one refusal you caused yourself, at a time you wrote down, is the
-result this module produces.
+That is the condition a port scan creates — mostly closed ports — so the instrument most
+people reach for first is blind to the most common reconnaissance activity there is.
+
+The second half of the answer: **none of these records names the attacker.** 5152 names the
+program on the *receiving* side, and only when one is listening; it never names the program
+or the account on the *sending* side, because neither exists on the machine doing the
+logging. Firewall rule changes (4946 / 4948) name nobody at all.
 
 In this module you will:
 
@@ -38,8 +41,10 @@ In this module you will:
 3. Write one firewall rule of your own and then delete it, watching Windows record both —
    and discover that neither record says who did it
 4. Knock on a closed door on DC01 from WS01
-5. Find that refusal in the text file, then in the event log
-6. Discover that it was recorded on **DC01 only** — and that looking on WS01 finds nothing
+5. Find that neither `pfirewall.log` nor 5157 has it, with both demonstrably working
+6. Switch on the packet-drop subcategory, find it as **5152**, and read `Filter Origin`
+7. Run the controlled experiment that proves *why* — vary one thing at a time until the
+   instruments start reporting
 
 Follow the steps in order. **Every step says which VM.** This time it genuinely varies,
 and a query run on the wrong machine returns empty rather than an error.
@@ -55,9 +60,12 @@ DC01, where nothing is listening and no rule allows it.
 
 **A profile** is which set of firewall rules is currently in force. Windows keeps three —
 **Domain**, **Private** and **Public** — and uses one at a time depending on the kind of
-network it thinks it is on. Both lab machines are domain-joined, so both should be on the
-**Domain** profile. This matters because it is very easy to write a rule or switch on
+network it thinks it is on. This matters because it is very easy to write a rule or switch on
 logging for a profile you are not actually using, and then wonder why nothing happened.
+
+> **Do not assume both machines agree.** On 2026-09-14 WS01 was on **Domain** and DC01 on
+> **Public** at the same moment, with the domain otherwise healthy. Read the active profile on
+> each machine separately in Step 1 and use whatever it says.
 
 ---
 
@@ -65,9 +73,9 @@ logging for a profile you are not actually using, and then wonder why nothing ha
 
 | Sitting | Steps | Ends with |
 |---|---|---|
-| 1 | 0 – 3 | Recording switched on, one rule written, nothing triggered yet |
-| 2 | 4 – 7 | The refusal caused and found in both logs |
-| 3 | 8 – 9 + Findings | Baseline table, screenshots, write-up |
+| 1 | 0 – 3 | Recording switched on, one rule written and deleted, nothing triggered yet |
+| 2 | 4 – 6b | The knock made, found in 5152 and nowhere else, and the experiment run |
+| 3 | 7 – 9 + Findings | The source-host check, baseline table, screenshots, write-up |
 
 ---
 
@@ -287,7 +295,33 @@ It should now read `Failure`. Do the same two commands on **DC01**.
 > Leave **Success** off for the whole module. If you ever switch it on, switch it off the
 > same sitting and check the log size afterwards (`wevtutil gli Security`, per Module 04).
 
-### 2.3 Switch on rule-change recording
+### 2.2b Switch on blocked **packets** as well — do not skip this
+
+**Aim: watch the only instrument that sees a knock on a closed port.**
+
+Switch 1 covers *connections*. Switch 2 covers *packets*, and they are not the same thing.
+A packet is one message arriving. A connection is what exists after both machines have
+agreed to talk. **A knock on a closed port never becomes a connection**, so it is never a
+5156 or a 5157 — it is a 5152, governed by this separate switch.
+
+On **DC01**:
+
+```powershell
+auditpol /set /subcategory:"Filtering Platform Packet Drop" /failure:enable
+```
+
+```powershell
+auditpol /get /subcategory:"Filtering Platform Packet Drop"
+```
+
+Do the same on **WS01**.
+
+> **This step did not exist in the first draft of this run sheet, and its absence cost most
+> of a sitting on 2026-09-14.** The gate table above listed four switches; Steps 2.2–2.4
+> enabled three. The break in Step 4 then produced nothing in either instrument being
+> watched — both of which were working, and both of which were structurally incapable of
+> seeing it. The module reproduced its own central lesson on its own author. Left in the
+> record deliberately; see Finding 4.
 
 **Aim: so that the rule you write in Step 3 leaves a record — and so would an attacker's.**
 
@@ -578,7 +612,8 @@ it.
 
 # Step 5 — Detect in the text file (DC01)
 
-**Aim: read a firewall log that is not an event log, and see how little it tells you.**
+**Aim: read a firewall log that is not an event log — and find that it holds nothing at all
+about what you just did, while proving it is working.**
 
 ### 5.1 Open the file
 
@@ -599,7 +634,12 @@ The first few lines are a header explaining the columns. Then each entry is one 
 date, time, action (`DROP`), protocol, source address, destination address, source port,
 destination port, and a set of mostly-empty fields.
 
-### 5.2 Find your three attempts
+> **Read the header.** The fourth line says **`#Time Format: Local`**. This file stamps
+> **local** time while the event log stores **UTC**. Correlating the two needs the offset
+> applied in the opposite direction from the one you are used to — on these VMs the text
+> file reads one hour *ahead* of the same event in the Security log.
+
+### 5.2 Find your three attempts — and do not find them
 
 ```powershell
 Get-Content 'C:/Windows/System32/LogFiles/Firewall/pfirewall.log' | Select-String '9999'
@@ -609,19 +649,23 @@ Get-Content 'C:/Windows/System32/LogFiles/Firewall/pfirewall.log' | Select-Strin
 because this is a plain text file, not an event log. None of `Get-WinEvent`,
 `-FilterHashtable` or XML field extraction applies to it.
 
-**Screenshot this.** Then look at what it gives you and, more importantly, what it does
-not: an address, a port, a time, the word `DROP`. It cannot tell you which program on WS01
-made the attempt, or which account was logged in. If this were the only record you had,
-your ticket would say "something on 10.0.0.20 probed port 9999" and stop there.
+> **Expect nothing.** Verified 2026-09-14: with `LogDroppedConnections` reading `Enable`
+> on the active profile, and across **two** separate knock windows twenty minutes apart,
+> `pfirewall.log` contained **no entry for port 9999**. The file was not broken — it held a
+> real `DROP` line for an ICMP packet from `10.0.0.20` at 08:41:56 local. So the file works
+> and is selectively blind to what you just generated.
+>
+> That absence is a finding, not a fault. Do **not** start changing settings. Step 6 shows
+> what did record it, and Step 6b establishes why.
 
 ---
 
 # Step 6 — Detect in the event log (DC01)
 
-**Aim: get the same refusal with the detail that makes it actionable, and see why the
-event log is worth the volume it costs.**
+**Aim: find out which of the two event IDs actually recorded your knock, and prove the one
+that did not is working before calling it blind.**
 
-### 6.1 Start wide
+### 6.1 Look for the connection event first
 
 On **DC01**:
 
@@ -629,12 +673,15 @@ On **DC01**:
 Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5157} -MaxEvents 10
 ```
 
-**5157** means *the Windows Filtering Platform blocked a connection*. The Filtering
-Platform is the machinery underneath the firewall that actually makes the allow/block
-decision — the firewall rules are the policy, this is the engine that enforces it.
+**5157** means *the Filtering Platform blocked a connection*. The Filtering Platform is the
+machinery underneath the firewall that makes the allow/block decision — the rules are the
+policy, this is the engine that enforces it.
 
-If that returns nothing, stop and read the troubleshooting list at the bottom of this file
-before changing anything.
+> **Expect events, none of them yours.** Verified 2026-09-14: this query returned results on
+> DC01, and **none were the port 9999 knocks**. That combination is the whole point. The
+> channel is alive, the host is right, the window is right — and your activity is not in it.
+> A query that returns *something* is its own control: it excludes wrong-machine, wrong-log,
+> rotation and channel-off in one stroke. Same argument structure as Module 03's Finding 2.
 
 ### 6.2 Count before you conclude
 
@@ -642,78 +689,240 @@ before changing anything.
 Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5157} | Measure-Object
 ```
 
-Module 03 cost a sitting to this exact trap: a small number returned under `-MaxEvents`
-was read as "that is all there is", which was fiction. Get the count before you treat any
-number as a result.
+Module 03 cost a sitting to this exact trap: a small number returned under `-MaxEvents` was
+read as "that is all there is", which was fiction. Get the count before treating any number
+as a result.
 
-### 6.3 Narrow to your three attempts
+### 6.3 Now look for the packet event
 
-You want only the ones aimed at port 9999. Take one event and look at its fields by name
-first, so you know what the field is called rather than guessing:
+**Aim: find the instrument that actually saw it.**
 
 ```powershell
-$e = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5157} -MaxEvents 1
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 10
+```
+
+**5152** means *the Filtering Platform blocked a packet*. Your knocks are here — provided
+Step 2.2b was done. If Step 2.2b was skipped, this returns nothing and **that is the lesson**:
+go back and switch it on, then knock again, and watch the same activity appear in a log that
+was empty five minutes ago.
+
+### 6.4 Read what 5152 carries
+
+```powershell
+$p = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 1
 ```
 
 ```powershell
-([xml]$e.ToXml()).Event.EventData.Data | Format-Table Name, '#text'
+$p.Message
 ```
 
-Read the list. You are looking for the destination port field, the source address, the
-application, and the account.
+`.Message` renders every field with its label — easier here than the XML extraction, and it
+is what Event Viewer's General tab shows.
 
-### 6.4 The fields that make 5157 worth having
+**Verified output, DC01, 2026-09-14:**
 
-**Aim: state plainly what this event gives you that the text file does not.**
-
-Pull the useful fields out for your three events. Build it up — first get the events:
-
-```powershell
-$events = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5157} -MaxEvents 20
+```
+Application Information:
+        Process ID:            0
+        Application Name:      -
+Network Information:
+        Direction:             Inbound
+        Source Address:        10.0.0.20      Source Port: 49745
+        Destination Address:   10.0.0.10      Destination Port: 9999
+        Protocol:              6
+Filter Information:
+        Filter Origin:         Stealth
+        Layer Name:            Transport
 ```
 
-Then for one of them, print the four fields that matter by name (substitute the exact
-names you read in 6.3):
+Three things to take from it.
 
-```powershell
-$x = ([xml]$events[0].ToXml()).Event.EventData.Data
-$x | Where-Object Name -in 'Application','SourceAddress','DestPort','ProcessId' | Format-Table Name, '#text'
-```
+**`Process ID: 0`, `Application Name: -`.** This field names the **local** process that owned
+the socket. Nothing on DC01 was listening on 9999, so no local process was ever involved. The
+program that sent this is on WS01, and DC01 cannot see inside WS01. **A blocked inbound packet
+tells you what was targeted and from which address — never by what program or which user.**
 
-**Screenshot this.** Compare it directly against the Step 5 screenshot. That comparison is
-the module's main result, and it is what Finding 1 will be written from.
+**`Protocol: 6`** is TCP, by IANA number. The event does not spell it out.
 
-> **Read the field names off your own output, not from this file.** I have not verified the
-> exact spelling of 5157's fields on your hosts. If 6.3 shows different names, use those and
-> correct this run sheet afterwards — that is how Modules 02 and 03 both ended up accurate.
+**`Filter Origin: Stealth`** is the key to Step 6b. The drop was made by Windows **stealth
+mode** — the built-in behaviour of silently discarding uninvited packets — and not by any
+firewall rule.
+
+**Screenshot this.** It is the module's central piece of evidence.
 
 ---
 
-# Step 7 — The same query on the wrong machine (WS01)
+# Step 6b — The controlled experiment (DC01 + WS01)
 
-**Aim: prove to yourself that an empty result can mean "you are asking the wrong computer",
-and learn to rule that out first.**
+**Aim: stop reasoning about why the instruments were blind and establish it, by changing one
+thing at a time.**
 
-Run the *identical* query from 6.1, this time on **WS01**:
+This is the part of the module worth the most. Everything so far is an observation; this turns
+it into a result. Two variables, changed separately.
+
+### 6b.1 Variable one — add an explicit rule
+
+**Question: were the drops missing from `pfirewall.log` because no *rule* made them?**
+
+On **DC01**, in `wf.msc`: **Inbound Rules → New Rule → Custom → All programs → Protocol
+type: TCP → Local port: Specific Ports `9999` → Scope: remote IP `10.0.0.20` → Block the
+connection → Public only → Name `LAB Block TCP9999 from WS01`**.
+
+Verify the rule rather than trusting the wizard:
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5157} -MaxEvents 10
+Get-NetFirewallRule -DisplayName 'LAB Block TCP9999 from WS01' | Select-Object DisplayName, Enabled, Direction, Action, Profile
 ```
 
-**What I expect:** nothing, or nothing related to port 9999. WS01 *sent* the connection;
-DC01 *refused* it. The refusal is DC01's decision, so DC01 is where the record lives.
-WS01's outbound default is allow, so from WS01's point of view nothing was blocked at all.
+```powershell
+Get-NetFirewallRule -DisplayName 'LAB Block TCP9999 from WS01' | Get-NetFirewallPortFilter
+```
 
-**This is an expectation, not a verified fact on your lab.** If WS01 does return something,
-that is a legitimate and more interesting result — record what it says and write it up.
-Either answer is worth having; what is not acceptable is assuming.
+Knock three more times from **WS01**, then re-check both instruments on DC01.
 
-Either way, note the shape of the failure: the query is correct, the log is healthy, the
-window is right, and it still returns nothing — because the event was never on that
-machine. That is the fourth entry on your empty-output checklist, and this module is where
-it stops being theoretical.
+> **Verified result, 2026-09-14: nothing changed.** The rule read back `Enabled: True`,
+> `Direction: Inbound`, `Action: Block`, `Profile: Public`, `Protocol: TCP`,
+> `LocalPort: 9999` — correct in every respect. The fresh 5152 still said
+> `Filter Origin: Stealth`, and `pfirewall.log` was still empty for 9999. A correct, enabled,
+> matching block rule made **no difference**, which excludes "the rule did not match."
+
+### 6b.2 Variable two — make something listen
+
+**Question: is the deciding factor that nothing is listening on the port?**
+
+On **DC01**:
+
+```powershell
+$listener = [System.Net.Sockets.TcpListener]9999; $listener.Start()
+```
+
+This is a new construct — reaching into .NET directly rather than using a cmdlet. It opens
+port 9999 and holds it open under `powershell.exe`. Nothing answers meaningfully; the port
+simply exists.
+
+Knock once more from **WS01**, then on **DC01**:
+
+```powershell
+$p3 = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 1
+```
+
+```powershell
+$p3.Message
+```
+
+```powershell
+Get-Content 'C:/Windows/System32/LogFiles/Firewall/pfirewall.log' | Select-String '9999'
+```
+
+Then release the port:
+
+```powershell
+$listener.Stop()
+```
+
+> **Verified result, 2026-09-14: both instruments changed at once.** `Filter Origin` became
+> **`Query User Default`** — no longer stealth — `Application Name` became **`powershell.exe`**,
+> and `pfirewall.log` **populated** for port 9999 for the first time in the module.
+
+### 6b.3 The matrix
+
+| Something listening? | Explicit block rule? | `Filter Origin` | App named in 5152 | In `pfirewall.log`? |
+|---|---|---|---|---|
+| No | No | `Stealth` | `-` (PID 0) | **No** |
+| No | **Yes** | `Stealth` | `-` (PID 0) | **No** |
+| **Yes** | Yes | `Query User Default` | **`powershell.exe`** | **Yes** |
+
+One variable changed per row. The conclusions follow directly:
+
+1. **Stealth mode intercepts packets to closed ports before rules are consulted.** A correct
+   matching rule changed nothing; opening the port changed everything.
+2. **`pfirewall.log` records a drop only once the packet gets past stealth.** `LogBlocked` was
+   `Enable` throughout, so this was never a logging-configuration problem.
+3. **5152 names the program on the receiving side, and only when one exists.** It never names
+   the sender.
+
+**Not established:** why the third row reads `Query User Default` rather than naming the block
+rule. The rule was present, enabled and matching, and something else still made the decision.
+**No cause established** — the precedence between the query-user filter and an explicit rule
+was not investigated. Recorded as an open question, not explained.
+
+### 6b.4 Clean up
+
+On **DC01**, in `wf.msc` → **Inbound Rules**, delete **`LAB Block TCP9999 from WS01`**. Confirm
+the listener is stopped.
+
+**Leave `Filtering Platform Packet Drop` switched on.** It is Failure-only, the lab is isolated,
+and it is the one instrument shown here to catch this activity. A deliberate decision, not an
+oversight — say so in the write-up.
+
+---
 
 **End of sitting 2.**
+
+---
+
+# Step 7 — Go and get the attribution from the source host (WS01)
+
+**Aim: recover the one thing DC01 could never tell you — what made the attempt — and in doing
+so meet the empty-result-because-wrong-machine case deliberately.**
+
+Step 6 established that DC01's evidence names no sender. That information is not lost; it is
+simply on the other machine. This step goes and gets it.
+
+### 7.1 The same query, the wrong machine
+
+Run the *identical* query from 6.3, this time on **WS01**:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 10
+```
+
+**Expect nothing related to port 9999.** WS01 *sent* the connection; DC01 *dropped* it.
+WS01's outbound default is allow, so from WS01's point of view nothing was blocked at all.
+
+Note the shape of that failure: the query is correct, the log is healthy, the window is
+right, auditing is on — and it still returns nothing, because the event was never on this
+machine. That is the fourth entry on the empty-output checklist, and here it stops being
+theoretical.
+
+> **State the result you actually get.** If WS01 *does* return something, that is a
+> legitimate and more interesting finding — record it rather than forcing it to match this
+> expectation.
+
+### 7.2 Find what made the attempt
+
+**Aim: name the program and account that DC01 could not.**
+
+On **WS01**, the knock was `Test-NetConnection` running inside PowerShell. That is a process,
+and process creation is something you have logged since Module 05:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4688; StartTime=(Get-Date).AddHours(-3)} | Measure-Object
+```
+
+Narrow to the window you wrote down in Step 4, then pull `NewProcessName`, `CommandLine` and
+`SubjectUserName` by name — exactly the extraction built in Module 05.
+
+**WS01 also has Sysmon** (installed in Module 03, still configured). Sysmon **Event 1** carries
+the full command line, `User`, `IntegrityLevel` and `ParentImage` in one record — the same
+move that turned Module 03's Finding 1 from "a value changed" into "this account ran this
+command".
+
+> **DC01 has no Sysmon.** Only WS01 does. So the attribution story is asymmetric across this
+> lab, which is worth stating in the write-up: the host that saw the attack cannot name the
+> actor, and the host that can name the actor did not see the attack.
+
+### 7.3 Write the join
+
+The deliverable of this step is one sentence that no single log could produce:
+
+> At *(UTC time)*, `powershell.exe` running as *(account)* on WS01 attempted a TCP connection
+> to `10.0.0.10:9999`; DC01's Filtering Platform dropped the packet under stealth mode,
+> recording it as 5152 with no sending process identified.
+
+Two hosts, two logs, one event. That join is the actual skill this module teaches.
+
+**End of sitting 3's first half.**
 
 ---
 
@@ -756,10 +965,16 @@ In `../assets/`, spaceless `06-*` names:
 - [ ] `06-no-attribution.png` — `([xml]$d.ToXml()).Event.System.Security` returning empty,
       with the same check against the 4946 as the control. The proof that the absence is
       about this family of events, not one odd event
-- [ ] `06-pfirewall-drop.png` — the `Select-String '9999'` result from the text file: the
-      `DROP` lines, addresses and ports, and nothing else
-- [ ] `06-5157-fields.png` — the same refusal as an event, showing application, source
-      address, port and process. **The pair with the above is the module's evidence**
+- [ ] `06-pfirewall-empty.png` — `Select-String '9999'` returning **nothing** from the text
+      file, with the file's two unrelated `DROP` lines visible below it proving the file works
+- [ ] `06-5152-stealth.png` — the 5152 for a knock, showing `Application Name: -`,
+      `Process ID: 0` and **`Filter Origin: Stealth`**. **The module's central evidence**
+- [ ] `06-rule-verified.png` — the block rule read back (`Enabled/Direction/Action/Profile`)
+      alongside `Get-NetFirewallPortFilter` (`TCP`, `LocalPort 9999`) — the proof that row 2
+      of the matrix had a correct rule
+- [ ] `06-5152-listening.png` — the 5152 after the listener was started, showing
+      `Filter Origin: Query User Default` and `Application Name: powershell.exe`, plus the
+      now-populated text file. **The pair with `06-5152-stealth.png` is Finding 4**
 - [ ] `06-5157-ws01-empty.png` — the identical query returning nothing on WS01
 
 Then, in your own words: who probed what, how you know, and what the text file could not
@@ -775,19 +990,84 @@ These VMs display WAT (UTC+1), so screenshots read one hour ahead.
 
 ---
 
-### Finding 1 — Repeated connection attempts to a closed port, refused at the destination (DC01)
+### Finding 1 — A knock on a closed port is invisible to two of the three firewall instruments (DC01)
 
-**Observation.**
-_(To be written from the run: host, log, event ID, exact UTC times, source address,
-destination port, the application and account named in 5157, and the matching `DROP` lines
-from the text file.)_
+**Observation.** On **DC01**, on **2026-09-14**, three TCP connection attempts were made from
+WS01 (`10.0.0.20`) to port **9999**, a port with no listening service and no rule permitting
+it, inside the window **09:02:45 – 09:03:48 UTC**. Each attempt timed out slowly rather than
+being refused immediately. The attempts were repeated a second time after configuration
+changes, with the same outcome.
 
-**Inference.**
-_(Judgement, labelled as such. Confidence language. What cannot be determined from this
-evidence — in particular, what the text file alone could not establish.)_
+Three instruments were live on DC01 at the time:
+
+| Instrument | Configuration verified | Result |
+|---|---|---|
+| `pfirewall.log` | `LogDroppedConnections: Enable` on the active (Public) profile; `Firewall Policy: BlockInbound,AllowOutbound` | **No entry for port 9999**, across two windows twenty minutes apart |
+| **5157** (connection blocked) | `Filtering Platform Connection` = `Failure` (`auditpol` readback) | **Returned events, none of them the knocks** |
+| **5152** (packet blocked) | initially `No Auditing`; enabled mid-run | **Recorded all knocks** once enabled |
+
+Both negative instruments were demonstrably functional: `pfirewall.log` held a real `DROP`
+line for an ICMP packet from `10.0.0.20` at **08:41:56 local**, and the 5157 query returned
+events under the identical command that failed to return the knocks.
+
+The 5152 recorded `Process ID: 0`, `Application Name: -`, `Direction: Inbound`,
+`Source Address: 10.0.0.20`, `Destination Port: 9999`, `Protocol: 6`, and
+**`Filter Origin: Stealth`**.
+
+**Inference.** _(To be written. Points to cover: the two negatives are coverage failures, not
+configuration failures, and the positive 5157 result is the control that establishes this —
+the same argument structure as Module 03's Finding 2. A port scan consists overwhelmingly of
+attempts against closed ports, so this is the condition under which reconnaissance occurs.
+State what cannot be determined: the sending program and account are not recoverable from
+DC01's evidence at all.)_
+
+**Recommendation.** _(To be written. `Filtering Platform Packet Drop` must be enabled for
+scan detection; `pfirewall.log` alone is insufficient; attribution requires the source host.)_
+
+---
+
+### Finding 4 — Stealth mode, not rule configuration, is what makes the drop invisible (DC01)
+
+**Observation.** A controlled experiment on **2026-09-14** varied two factors independently
+against the same port, same source and same knock.
+
+| Something listening? | Explicit block rule? | `Filter Origin` | App named in 5152 | In `pfirewall.log`? |
+|---|---|---|---|---|
+| No | No | `Stealth` | `-` (PID 0) | No |
+| No | **Yes** | `Stealth` | `-` (PID 0) | No |
+| **Yes** | Yes | `Query User Default` | **`powershell.exe`** | **Yes** |
+
+Row 2's rule was verified by readback, not assumed: `Enabled: True`, `Direction: Inbound`,
+`Action: Block`, `Profile: Public`, `Protocol: TCP`, `LocalPort: 9999`. Row 3's listener was
+a `System.Net.Sockets.TcpListener` on port 9999 held open by `powershell.exe`.
+
+**Inference.** _(To be written. Supported: stealth mode intercepts packets to closed ports
+before rules are consulted; `pfirewall.log` records a drop only after that point; 5152 names
+the local process only where one exists. Not supported and to be stated as such: why row 3
+reads `Query User Default` rather than naming the block rule — the precedence between the
+query-user filter and an explicit rule was **not** investigated and **no cause is
+established**.)_
 
 **Recommendation.**
-_(Specific follow-up queries.)_
+
+---
+
+### Finding 5 — The author's own run sheet reproduced the module's central failure
+
+**Observation.** The gate table in Step 2 listed **four** independent switches. Steps 2.2–2.4
+as originally written enabled **three**, omitting `Filtering Platform Packet Drop`. The break
+in Step 4 was designed against a **closed** port — precisely the condition that routes the
+packet to stealth mode and away from both instruments the run sheet told the reader to watch.
+The omission was found only after both instruments returned nothing and were separately proved
+functional. Step 2.2b was added afterwards.
+
+**Inference.** _(To be written. This is the fourth consecutive module in which a silent gate
+produced empty output with no error — Module 02's `Handle Manipulation` and `WRITE_DAC`,
+Module 03's per-key SACL, and now this. Worth stating plainly that knowing the failure mode in
+advance was not sufficient to avoid it.)_
+
+**Recommendation.** _(To be written. Enumerate every gate and verify each by readback before
+the Break step, rather than enabling the ones the planned detection needs.)_
 
 ---
 
@@ -841,9 +1121,10 @@ same move as Module 03's Finding 1, where Event 1 turned "a registry value chang
 
 | ID | Log | Meaning |
 |---|---|---|
-| **5157** | Security | The Filtering Platform **blocked** a connection. Needs `Filtering Platform Connection` / Failure |
-| **5156** | Security | The Filtering Platform **allowed** a connection. Needs the same subcategory / Success — deliberately left **off** in this module because of the volume |
-| **5152 / 5153** | Security | A packet was blocked / restricted. A **separate** subcategory from 5156/5157 |
+| **5152** | Security | A **packet** was blocked. Needs `Filtering Platform Packet Drop` / Failure — **off by default**, and the **only** instrument that sees a knock on a closed port. Carries the *local* application only, so it is blank for a port with no listener |
+| **5153** | Security | A packet was **restricted** by a more-restrictive filter. Same subcategory as 5152 |
+| **5157** | Security | The Filtering Platform blocked a **connection**. Needs `Filtering Platform Connection` / Failure. **Never fires for a closed port** — no connection is ever formed. Verified 2026-09-14 |
+| **5156** | Security | The Filtering Platform **allowed** a connection. Same subcategory / Success — deliberately left **off** in this module because of the volume |
 | **4946** | Security | A rule was **added** to the firewall exception list. Fields: Profile Changed, Rule ID, Rule Name. **No account** — verified 2026-09-14 |
 | **4947** | Security | A firewall rule was **modified** |
 | **4948** | Security | A firewall rule was **deleted** — the one an attacker generates. Same three fields, **no account** — verified 2026-09-14 |
@@ -890,6 +1171,22 @@ Candidates — confirm the IDs against attack.mitre.org before putting them in t
 - **The text file and the event log are separate switches.** `LogBlocked` governs only the
   text file; `auditpol` governs only the events. Turning on one and looking for the other
   is the most likely way to lose an hour here.
+- **A knock on a closed port is a *packet*, never a *connection*.** It is a **5152**, not a
+  5157, and 5152's subcategory is off by default. Watching only 5157 gives silence with no
+  error. Verified 2026-09-14 — cost most of a sitting, including to the person who wrote this
+  file.
+- **`pfirewall.log` does not record stealth-mode drops**, no matter what `LogBlocked` says or
+  what rules exist. Verified by experiment: an explicit, enabled, matching block rule changed
+  nothing; making a program listen on the port changed both the filter origin and the text
+  file at once. So the firewall's own log file is blind to port scanning against closed ports.
+- **`pfirewall.log` stamps LOCAL time; the event log stores UTC.** The header says so —
+  `#Time Format: Local`. Correlating the two needs the offset applied in the opposite
+  direction from the usual one.
+- **`Application Name` in 5152 is the *local* process, not the sender.** It reads `-` with
+  `Process ID: 0` whenever nothing was listening, which is exactly the interesting case.
+  DC01 can never name what on WS01 made the attempt; that evidence only exists on WS01.
+- **`Protocol: 6` means TCP** (IANA number). 1 is ICMP, 17 is UDP. The event does not spell
+  them out.
 - **No 4946 for a rule you definitely created** almost certainly means
   `MPSSVC Rule-Level Policy Change` was switched on *after* you created it. Auditing is
   never retroactive — the same cause as Module 02's missing 4670 and Module 03's SACL
