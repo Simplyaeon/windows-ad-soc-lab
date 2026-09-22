@@ -29,10 +29,18 @@ then go and find it.
 That is the condition a port scan creates — mostly closed ports — so the instrument most
 people reach for first is blind to the most common reconnaissance activity there is.
 
-The second half of the answer: **none of these records names the attacker.** 5152 names the
-program on the *receiving* side, and only when one is listening; it never names the program
-or the account on the *sending* side, because neither exists on the machine doing the
-logging. Firewall rule changes (4946 / 4948) name nobody at all.
+The second half of the answer, established on 2026-09-15 and **the opposite of what this run
+sheet originally predicted**:
+
+> **Nothing names the attacker — not even the attacking machine.** 5152 names the program on
+> the *receiving* side, and only when one is listening. Going to the *source* host does not
+> rescue it: `Test-NetConnection` creates no process, so there is no **4688**; and Sysmon
+> **Event 3** records connections that **complete**, so three unanswered knocks produced
+> nothing while one successful connection produced a full record. Firewall rule changes
+> (4946 / 4948) name nobody at all.
+
+So the instruments get informative exactly when the probe **succeeds** — which is the wrong way
+round for catching someone who has not got in yet. See Finding 2.
 
 In this module you will:
 
@@ -45,6 +53,8 @@ In this module you will:
 6. Switch on the packet-drop subcategory, find it as **5152**, and read `Filter Origin`
 7. Run the controlled experiment that proves *why* — vary one thing at a time until the
    instruments start reporting
+8. Go to the sending machine to recover the attacker's identity — arming Sysmon for it first —
+   and establish by a second controlled experiment that it is not recoverable there either
 
 Follow the steps in order. **Every step says which VM.** This time it genuinely varies,
 and a query run on the wrong machine returns empty rather than an error.
@@ -861,66 +871,319 @@ oversight — say so in the write-up.
 
 ---
 
-# Step 7 — Go and get the attribution from the source host (WS01)
+# Step 7 — Go looking for the attribution on the source host (WS01)
 
-**Aim: recover the one thing DC01 could never tell you — what made the attempt — and in doing
-so meet the empty-result-because-wrong-machine case deliberately.**
+**Aim: recover the one thing DC01 could never tell you — what made the attempt — and find
+out that on a closed port, no instrument in this lab can.**
 
-Step 6 established that DC01's evidence names no sender. That information is not lost; it is
-simply on the other machine. This step goes and gets it.
+Step 6 established that DC01's evidence names no sender. The obvious assumption is that the
+information is not lost, merely on the other machine, and this step goes to get it.
+
+> **That assumption is wrong, and the run proved it on 2026-09-15.** Three instruments on
+> WS01 — packet-drop auditing, process-creation auditing and Sysmon — were each verified
+> alive and each recorded **nothing** about the knock. The step is kept in this order
+> because working through all three is what makes the conclusion trustworthy; see Finding 2.
+
+### 7.0 Arm Sysmon *before* you knock (WS01)
+
+**Aim: give WS01 an instrument that records outbound network activity with the process and
+the account attached — and get it running before the activity, because nothing here is
+retroactive.**
+
+Sysmon's **Event 3** is "a network connection was made", recorded from the *sender's* side
+with `Image`, `User`, `ProcessGuid` and the destination attached. That is exactly the field
+set DC01 cannot supply.
+
+The catch is volume. WS01 talks to DC01 constantly — DNS, Kerberos, LDAP, every few seconds
+— so a broad network rule buries the log, which is the failure Module 04 measured. Scope it
+as tightly as a rule can be scoped: **destination port 9999 and nothing else.**
+
+Read the config before changing it:
+
+```powershell
+Get-Content 'C:/Tools/sysmon-registry.xml'
+```
+
+Then ask Sysmon what it is *actually running*, which is not necessarily what is in that file:
+
+```powershell
+Sysmon64.exe -c
+```
+
+> **Same switch, two behaviours.** With no filename, `-c` **prints** the live config. With a
+> filename, it **applies** one. Verified in Module 03 and used both ways here.
+
+Open the file — `notepad 'C:/Tools/sysmon-registry.xml'` — and add this immediately above the
+closing `</EventFiltering>` line, leaving the `RegistryEvent` group untouched:
+
+```xml
+  <NetworkConnect onmatch="include">
+    <DestinationPort condition="is">9999</DestinationPort>
+  </NetworkConnect>
+```
+
+Three lines, three ideas. **`NetworkConnect`** is the rule group for Event 3, as
+`RegistryEvent` is for Events 12 and 13 — one group per event type. **`onmatch="include"`**
+means *log only what matches below*; an empty include group logs nothing at all.
+**`condition="is"`** is an exact match — `contains`, which the registry rules use, would be
+wrong here because it would also catch ports 19999 and 99990.
+
+> **Verified 2026-09-15:** a `NetworkConnect` element placed directly under `<EventFiltering>`,
+> as a sibling of the existing `<RuleGroup>`, is accepted and works. It does not have to live
+> inside a rule group.
+
+Apply it. Move to the folder first, so no path separators are needed at all:
+
+```powershell
+Set-Location 'C:/Tools'
+```
+
+```powershell
+Sysmon64.exe -c sysmon-registry.xml
+```
+
+You want `Configuration updated`. Then read back what is now running:
+
+```powershell
+Sysmon64.exe -c
+```
+
+The `NetworkConnect` rule must appear alongside the four registry rules. **The knock is
+worthless without this readback** — "the file says so" and "Sysmon is evaluating it" are two
+different claims.
 
 ### 7.1 The same query, the wrong machine
 
-Run the *identical* query from 6.3, this time on **WS01**:
+**Aim: meet the empty-result-because-wrong-machine case deliberately — and learn to prove an
+instrument is alive *before* believing a silence from it.**
+
+Run the *identical* query from 6.3, this time on **WS01**. But prove the channel first:
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 10
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} | Measure-Object
 ```
 
-**Expect nothing related to port 9999.** WS01 *sent* the connection; DC01 *dropped* it.
-WS01's outbound default is allow, so from WS01's point of view nothing was blocked at all.
+> **Verified 2026-09-15: 1040 events.** WS01 drops inbound packets constantly with nobody
+> attacking it — the network-layer twin of "firewall rules change on their own". A single
+> 5152 is background, not a signal.
 
-Note the shape of that failure: the query is correct, the log is healthy, the window is
-right, auditing is on — and it still returns nothing, because the event was never on this
-machine. That is the fourth entry on the empty-output checklist, and here it stops being
-theoretical.
-
-> **State the result you actually get.** If WS01 *does* return something, that is a
-> legitimate and more interesting finding — record it rather than forcing it to match this
-> expectation.
-
-### 7.2 Find what made the attempt
-
-**Aim: name the program and account that DC01 could not.**
-
-On **WS01**, the knock was `Test-NetConnection` running inside PowerShell. That is a process,
-and process creation is something you have logged since Module 05:
+Only now is a silence worth anything:
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4688; StartTime=(Get-Date).AddHours(-3)} | Measure-Object
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 20 | Where-Object { $_.Message -like '*9999*' }
 ```
 
-Narrow to the window you wrote down in Step 4, then pull `NewProcessName`, `CommandLine` and
-`SubjectUserName` by name — exactly the extraction built in Module 05.
+> **That `-like` searches the whole event text, not the destination-port field** — Module 03's
+> trap, where hunting `*Notepad.exe*` returned `reg.exe`. It is deliberately a wide net here:
+> if a loose search finds nothing, a precise one certainly will not.
 
-**WS01 also has Sysmon** (installed in Module 03, still configured). Sysmon **Event 1** carries
-the full command line, `User`, `IntegrityLevel` and `ParentImage` in one record — the same
-move that turned Module 03's Finding 1 from "a value changed" into "this account ran this
-command".
+**Verified 2026-09-15: nothing for 9999**, against 1040 events proving the instrument records.
+WS01 *sent* the connection and its outbound default is allow, so nothing was blocked and
+nothing was logged. The refusal happened a metre away, on another machine.
 
-> **DC01 has no Sysmon.** Only WS01 does. So the attribution story is asymmetric across this
-> lab, which is worth stating in the write-up: the host that saw the attack cannot name the
-> actor, and the host that can name the actor did not see the attack.
+That is the fourth entry on the empty-output checklist, and here it stops being theoretical.
 
-### 7.3 Write the join
+> **The first attempt at this step, on 2026-09-15, was worthless.** It was written as "run the
+> query and expect nothing" — but WS01's packet-drop subcategory was still `No Auditing`, so
+> the empty result could not have come out any other way. **An expectation that cannot fail is
+> not evidence.** The step only became real once the switch was on and the channel had proved
+> itself. See Finding 5.
 
-The deliverable of this step is one sentence that no single log could produce:
+### 7.2 Try process creation — and find it structurally blind
 
-> At *(UTC time)*, `powershell.exe` running as *(account)* on WS01 attempted a TCP connection
-> to `10.0.0.10:9999`; DC01's Filtering Platform dropped the packet under stealth mode,
-> recording it as 5152 with no sending process identified.
+**Aim: eliminate the instrument you would normally reach for, so that whatever comes next is
+clearly not something 4688 could have given you.**
 
-Two hosts, two logs, one event. That join is the actual skill this module teaches.
+On **WS01**, the knock was `Test-NetConnection`. Process creation has been logged since
+Module 05, so start by proving it is recording:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4688; StartTime=(Get-Date).AddMinutes(-20)} | Measure-Object
+```
+
+> **Verified 2026-09-15: 330 events in 20 minutes.** An earlier window on 2026-09-15 measured
+> **308** in 20 minutes. Two independent measurements that close suggest a real rate rather
+> than boot noise, but **neither window was controlled for a reboot**, so this is recorded as
+> an open question, not a measurement. If the rate is real, WS01's 20 MB Security log fills in
+> roughly a day — against Module 04's measured ~0.26 MB/day in August.
+
+Now look for the knock:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4688; StartTime=(Get-Date).AddMinutes(-20)} | Where-Object { $_.Message -like '*Test-NetConnection*' }
+```
+
+**Verified 2026-09-15: nothing.** `Test-NetConnection` is a cmdlet running *inside* a
+PowerShell session that was already open. No process is created, so there is no 4688.
+
+> **The general lesson, and it is bigger than this module: process-creation logging records a
+> program starting, not what it does for the next hour.** A shell opened once and used all
+> afternoon writes exactly one 4688 and then does a hundred invisible things. Cmdlet activity
+> inside an existing session is not visible to 4688 at all — that is what Module 05's script
+> block logging (4104) is for.
+
+### 7.3 Try Sysmon Event 3 — and find it blind too
+
+**Aim: test the instrument armed in 7.0, which was built for exactly this.**
+
+On **WS01**, count first — never `-MaxEvents`, which is how Module 03 invented a missing
+population:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Sysmon/Operational'; Id=3} | Measure-Object
+```
+
+> **Verified 2026-09-15: zero.** Three knocks, a rule scoped to exactly this port, applied and
+> read back before the knocks — and no Event 3.
+
+Before theorising, rule out the dullest explanation — that Sysmon has simply stopped:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Sysmon/Operational'; StartTime=(Get-Date).AddMinutes(-30)} | Group-Object Id | Select-Object Count, Name
+```
+
+`Group-Object Id` buckets events by ID and counts each — one command that says what Sysmon
+has been recording, rather than what you hoped it recorded.
+
+> **Verified 2026-09-15: 373 Event 1s in 30 minutes, no Event 3.** Service alive, channel
+> alive, registry rules intact. So the question is genuinely about the network rule.
+
+Two explanations survive, and they are **not** distinguishable from this evidence:
+
+1. `NetworkConnect` records connections that **complete**, and an unanswered SYN never becomes
+   one — structurally the same reason 5157 does not fire for a closed port.
+2. The rule is not being **evaluated** — "appears in the readback" is not "is being applied".
+
+**Do not pick one.** Step 7.4 changes one variable and lets the result decide.
+
+### 7.4 The discriminating test — make the far end answer
+
+**Aim: change exactly one thing, so the outcome names the cause instead of the analyst naming
+it.**
+
+This is Step 6b's variable-two move again, and it mirrors it: back then, making something
+listen flipped both *firewall* instruments. Now find out whether it flips Sysmon.
+
+A listener alone is not enough — DC01's inbound default is block, so the connection would
+still never complete. It needs an allow rule as well.
+
+On **DC01**, open the port:
+
+```powershell
+$listener = [System.Net.Sockets.TcpListener]9999; $listener.Start()
+```
+
+**Leave that window open.** The listener lives inside the session and dies with it.
+
+Then let the traffic through:
+
+```powershell
+New-NetFirewallRule -DisplayName 'LAB Allow TCP9999 from WS01' -Direction Inbound -Protocol TCP -LocalPort 9999 -RemoteAddress 10.0.0.20 -Action Allow -Profile Any
+```
+
+`-Profile Any` sidesteps the profile trap entirely. Read the rule back rather than trusting
+the cmdlet's own output:
+
+```powershell
+Get-NetFirewallRule -DisplayName 'LAB Allow TCP9999 from WS01' | Select-Object DisplayName, Enabled, Direction, Action, Profile
+```
+
+Knock once from **WS01**:
+
+```powershell
+Test-NetConnection -ComputerName 10.0.0.10 -Port 9999
+```
+
+**This one must return `TcpTestSucceeded: True`.** If it does not, the test has not run and
+there is no point looking at Sysmon. Then, on **WS01**, the identical count from 7.3:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Sysmon/Operational'; Id=3} | Measure-Object
+```
+
+> **Verified 2026-09-15: one.** Same rule, same port, same source, same destination — the only
+> variable that moved was whether DC01 answered. **0 across three unanswered attempts, 1 for
+> one completed attempt.** Explanation 1 holds; the rule was fine all along.
+
+### 7.5 Read what Event 3 does carry
+
+**Aim: establish what attribution looks like when it *is* available, so the gap is measured
+against something concrete rather than asserted.**
+
+On **WS01**:
+
+```powershell
+$n = Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Sysmon/Operational'; Id=3} -MaxEvents 1
+```
+
+```powershell
+([xml]$n.ToXml()).Event.EventData.Data | Format-Table Name, '#text'
+```
+
+**Verified output, WS01, 2026-09-15:**
+
+| Field | Value |
+|---|---|
+| `UtcTime` | `2026-09-15 23:09:13.841` |
+| `Image` | `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` |
+| `User` | **`CORP\Administrator`** |
+| `ProcessId` / `ProcessGuid` | `8960` / `{106e60df-cae4-6aa9-ec00-000000004000}` |
+| `Protocol` / `Initiated` | `tcp` / `true` (outbound from this host) |
+| `SourceIp` / `SourceHostname` / `SourcePort` | `10.0.0.20` / `WS01.corp.local` / `49758` |
+| `DestinationIp` / `DestinationHostname` / `DestinationPort` | `10.0.0.10` / `DC01` / `9999` |
+| `RuleName` | `-` |
+
+Two things beyond the obvious. **Sysmon resolves hostnames** — DC01's 5152 gave bare IPs,
+this names both machines. And **`ProcessGuid` is the join key back to Event 1**, which carries
+the command line that started that shell. That is the same move as Module 03's Finding 1.
+
+**Screenshot this** — it is `06-sysmon-attribution.png`.
+
+### 7.6 Write the join — and write what it cannot cover
+
+The deliverable is two sentences, and the second one is the module's actual result:
+
+> At **23:09:13.841 UTC on 2026-09-15**, `powershell.exe` running as `CORP\Administrator` on
+> `WS01.corp.local` opened a TCP connection to `DC01` on port 9999, recorded as Sysmon Event 3
+> on WS01 and as a permitted connection on DC01.
+>
+> The three attempts nineteen minutes earlier — **22:49:36, 22:49:59 and 22:50:00 UTC**, to the
+> same port on the same host from the same shell — appear **only** as three 5152 packet drops
+> on DC01, with `Process ID: 0` and `Application Name: -`. **No instrument on either machine
+> names the sender of those three.**
+
+Two hosts, four logs, one answer and one hole. Naming the hole precisely is the skill.
+
+### 7.7 Clean up — and confirm it
+
+On **DC01**:
+
+```powershell
+Remove-NetFirewallRule -DisplayName 'LAB Allow TCP9999 from WS01'
+```
+
+```powershell
+Get-NetFirewallRule -DisplayName 'LAB Allow TCP9999 from WS01'
+```
+
+A red "no matching objects found" error is the correct answer. Then, **in the window holding
+the listener**:
+
+```powershell
+$listener.Stop()
+```
+
+```powershell
+Get-NetTCPConnection -LocalPort 9999
+```
+
+> **Do not skip the two readbacks.** On 2026-09-15 a block rule was deleted "and confirmed"
+> without either, and was found still live at the start of the next sitting — which meant the
+> baseline for the next run was wrong until it was checked. A `Remove-` command that ran is
+> not a rule that is gone.
+
+**Leave the Sysmon `NetworkConnect` rule in place.** It is scoped to port 9999 only, so it
+cannot flood anything, and Module 07 extends the same group to RDP rather than rebuilding it.
 
 **End of sitting 3's first half.**
 
@@ -931,22 +1194,48 @@ Two hosts, two logs, one event. That join is the actual skill this module teache
 **Aim: produce the thing a real job asks for — a written statement of what these machines
 allow, so that a future change can be recognised as a change.**
 
-Fill this in from Step 1 and Step 2, one row per machine:
+Fill this in from Step 1 and Step 2, one row per machine. **Cells marked `(unread)` are not
+guesses to be filled from memory** — run the command and paste the answer, or leave the gap
+visible.
 
-| | WS01 | DC01 |
-|---|---|---|
-| Active profile | | |
-| Firewall enabled | | |
-| Default inbound | | |
-| Default outbound | | |
-| `Filtering Platform Connection` auditing | | |
-| `MPSSVC Rule-Level Policy Change` auditing | | |
-| `LogBlocked` on active profile | | |
-| Text log path | | |
-| Lab rules added | | |
+**State as at 2026-09-16.** Every cell below is either a readback pasted during the run or a
+value visible in a filed screenshot; the provenance column says which.
+
+| | WS01 | DC01 | Source |
+|---|---|---|---|
+| Active profile | **Domain** (`DomainAuthenticated`) | **Public** | `Get-NetConnectionProfile` / `06-firewall-profiles.png` |
+| Firewall enabled | (unread) | **On, all three profiles** | `06-firewall-profiles.png` |
+| Default inbound | (unread) | **Block** | `06-firewall-profiles.png` |
+| Default outbound | (unread) | **Allow** | `06-firewall-profiles.png` |
+| `Filtering Platform Connection` | **Failure** | **Failure** (sitting 2; not re-read 2026-09-16) | `auditpol` readback |
+| `Filtering Platform Packet Drop` | **Failure** | **Failure** | `auditpol` readback, both hosts |
+| `MPSSVC Rule-Level Policy Change` | (unread this sitting) | **Success** | `auditpol` readback |
+| `LogBlocked` on active profile | (unread) | (unread) | — |
+| Text log path | (unread) | (unread) | — |
+| Lab rules remaining | **none** | **none** — both lab rules deleted and confirmed by readback | `Get-NetFirewallRule` erroring |
+| Sysmon | v15.15, registry rules **+ `NetworkConnect` port 9999** | **not installed** | `Sysmon64.exe -c` readback |
+
+**Pre-run baseline, for comparison** (2026-09-13 13:08, `06-auditpol-before.png`): all three
+subcategories `No Auditing`, `LogAllowedConnections` and `LogDroppedConnections` both
+`Disable`, `Firewall Policy: BlockInbound,AllowOutbound`, `FileName
+%systemroot%\system32\LogFiles\Firewall\pfirewall.log`, `MaxFileSize 4096`,
+`InboundUserNotification Enable`, `RemoteManagement Disable`. Everything in the table above
+that is not a default is a change this module made.
+
+> **Which host that screenshot is from is not recorded in the frame** — the prompt reads
+> `PS C:\Users\Administrator>` on both machines. The taskbar is centred, which is Windows 11
+> and therefore WS01, but that is an inference from a UI detail and it is **not** treated as
+> established here. Confirm it before citing those values as either machine's baseline. The
+> lesson generalises: **a terminal screenshot that does not contain the hostname is weak
+> evidence**, and `hostname` costs one line at the top of the capture.
 
 Then two or three sentences in your own words: what each machine currently accepts, what
 you changed, and how someone would notice if it changed again.
+
+> **The asymmetry is the part worth writing down.** DC01 — the machine that gets attacked in
+> every scenario this lab will run — has no Sysmon and sits on the **Public** profile for
+> reasons never established. WS01, which nobody is attacking, carries the better instrument.
+> See Finding 3's recommendation.
 
 ---
 
@@ -954,31 +1243,68 @@ you changed, and how someone would notice if it changed again.
 
 In `../assets/`, spaceless `06-*` names:
 
-- [ ] `06-firewall-profiles.png` — `wf.msc` on DC01 showing the three profiles and which is
-      active, with inbound block / outbound allow visible
-- [ ] `06-auditpol-before.png` — the three `auditpol /get` readings from Step 2.1, before
-      any change
-- [ ] `06-4946-rule-added.png` — the 4946 for `LAB Block Ping from WS01`, fields pulled by
-      name, with the rule name visible
-- [ ] `06-4948-rule-deleted.png` — the 4948 for the same rule, showing Profile Changed,
-      Rule ID and Rule Name — **and no account field**. Finding 3's evidence
-- [ ] `06-no-attribution.png` — `([xml]$d.ToXml()).Event.System.Security` returning empty,
-      with the same check against the 4946 as the control. The proof that the absence is
-      about this family of events, not one odd event
-- [ ] `06-pfirewall-empty.png` — `Select-String '9999'` returning **nothing** from the text
-      file, with the file's two unrelated `DROP` lines visible below it proving the file works
-- [ ] `06-5152-stealth.png` — the 5152 for a knock, showing `Application Name: -`,
-      `Process ID: 0` and **`Filter Origin: Stealth`**. **The module's central evidence**
-- [ ] `06-rule-verified.png` — the block rule read back (`Enabled/Direction/Action/Profile`)
-      alongside `Get-NetFirewallPortFilter` (`TCP`, `LocalPort 9999`) — the proof that row 2
-      of the matrix had a correct rule
+- [x] `06-firewall-profiles.png` — **captured 2026-09-16, 01:03 local.** `wf.msc` on DC01:
+      all three profiles with **Windows Defender Firewall is on**, inbound blocked, outbound
+      allowed, and **`Public Profile is Active`** — the profile anomaly still present after the
+      unplanned shutdown and reboot
+- [x] `06-auditpol-before.png` — **captured 2026-09-13, 14:08 local**, during sitting 1. All
+      three subcategories reading **`No Auditing`** before any change, above a firewall profile
+      block showing `LogAllowedConnections: Disable`, `LogDroppedConnections: Disable`,
+      `FileName %systemroot%\system32\LogFiles\Firewall\pfirewall.log`, `MaxFileSize 4096`,
+      `Firewall Policy BlockInbound,AllowOutbound`. The genuine "before" state, and
+      unrepeatable once the switches were thrown
+- [x] `06-4946-rule-added.png` — **captured 2026-09-14, 08:55 local.** The 4946 for
+      `Lab Block Ping from ws01` — `ProfileChanged (null)`, `RuleId {13BD1F31-…}` — reached via
+      `| Select-Object -Last 1`. The same frame shows **all four 4946s**: three at
+      `9/14 08:28:15` and the hand-written one at `9/13 14:39:31`, which is the evidence that
+      the analyst's own event was the **oldest**
+- [x] `06-4946-allow-rule-added.png` — **captured 2026-09-16, 00:28 local.** The 4946 for
+      `Lab Allow TCP9999 from WS01` created during the Step 7.4 experiment —
+      `ProfileChanged: All` (from `-Profile Any`), contrasting with the `(null)` above
+- [x] `06-4948-rule-deleted.png` — **captured 2026-09-15, 23:01 local.** The 4948 at
+      `22:57:30 local` for the deletion of `lab Block tcp9999 from ws01`, showing Profile
+      Changed, Rule ID and Rule Name — **and no account field**
+- [x] `06-4948-extended.png` — **captured 2026-09-15, 23:04 local.** The stronger single
+      exhibit: the same 4948's **fields and header in one frame** — `EventRecordID 37499`,
+      `Channel Security`, `Computer DC01.corp.local`, and **`Security :`** blank
+- [x] `06-no-attribution.png` — **captured 2026-09-15, 23:10 local.**
+      `([xml]$d.ToXml()).Event.System` for the 4948 and for a 4946 as control, both with every
+      header field populated and `Security` **empty**. The proof that the absence is about this
+      family of events, not one odd event. The frame also preserves a mistyped `Id=49466`
+      returning `NoMatchingEventsFound` — see the gotcha on that below
+- [x] `06-5152-stealth.png` — **captured**. One frame carries both halves: the 5152 for a knock
+      (`Process ID: 0`, `Application Name: -`, `Source Address 10.0.0.20`,
+      `Destination Port 9999`, `Protocol: 6`, **`Filter Origin: Stealth`**,
+      `Filter Run-Time ID 68581`, `Layer Name Transport`) **and**, directly below it,
+      `Select-String '9999'` returning **nothing** from `pfirewall.log` while a full
+      `Get-Content` of the same file shows its header and two unrelated `DROP` lines
+      (`08:41:56 DROP ICMP 10.0.0.20 → 10.0.0.10` and `08:43:53 DROP UDP 127.0.0.1`).
+      **The module's central evidence** — the blind instrument and the proof it was working,
+      in one screenshot. Supersedes the separate `06-pfirewall-empty.png`
+- [x] `06-rule-verified.png` — **captured**. The block rule read back —
+      `Enabled: True`, `Direction: Inbound`, `Action: Block`, `Profile: Public` — alongside
+      `Get-NetFirewallPortFilter` (`Protocol: TCP`, `LocalPort: 9999`, `RemotePort: Any`), the
+      proof that row 2 of the matrix had a correct rule. The same frame timestamps the knock:
+      `$ps.TimeCreated` = **10:23:21 local / 09:23:21 UTC, 2026-09-14**
 - [ ] `06-5152-listening.png` — the 5152 after the listener was started, showing
       `Filter Origin: Query User Default` and `Application Name: powershell.exe`, plus the
       now-populated text file. **The pair with `06-5152-stealth.png` is Finding 4**
-- [ ] `06-5157-ws01-empty.png` — the identical query returning nothing on WS01
+- [x] `06-sysmon-attribution.png` — **captured 2026-09-16.** Sysmon **Event 3** fields pulled
+      by name for the connection that **completed**: `UtcTime 2026-09-15 23:09:13.841`,
+      `Image …\powershell.exe`, **`User CORP\Administrator`**, `SourceHostname WS01.corp.local`,
+      `DestinationHostname DC01`, `DestinationPort 9999`, `Initiated true`, `ProcessGuid`.
+      **Finding 2's positive half** — what attribution looks like when it is available at all
+- [ ] `06-sysmon3-zero.png` — the same Event 3 count returning **0** for the three unanswered
+      knocks, beside the `Group-Object Id` output showing **373 Event 1s** in the same window.
+      **Finding 2's negative half, and it needs its control in the same frame** — the count
+      alone proves nothing without the evidence that Sysmon was recording
+- [ ] `06-5152-ws01-empty.png` — on WS01, the count of **1040** 5152 events beside the
+      `9999` filter returning nothing. The instrument demonstrably alive and demonstrably
+      silent about the knock, in one frame. (Replaces the planned `06-5157-ws01-empty.png`;
+      5152 is the channel that matters and the one that was actually enabled there)
 
-Then, in your own words: who probed what, how you know, and what the text file could not
-have told you.
+Then, in your own words: who probed what, how you know, and — the harder half — **what none of
+the four instruments could have told you**, which is the module's actual result.
 
 ---
 
@@ -1014,15 +1340,52 @@ The 5152 recorded `Process ID: 0`, `Application Name: -`, `Direction: Inbound`,
 `Source Address: 10.0.0.20`, `Destination Port: 9999`, `Protocol: 6`, and
 **`Filter Origin: Stealth`**.
 
-**Inference.** _(To be written. Points to cover: the two negatives are coverage failures, not
-configuration failures, and the positive 5157 result is the control that establishes this —
-the same argument structure as Module 03's Finding 2. A port scan consists overwhelmingly of
-attempts against closed ports, so this is the condition under which reconnaissance occurs.
-State what cannot be determined: the sending program and account are not recoverable from
-DC01's evidence at all.)_
+**Inference.** I assess with **high confidence** that both negative results are **coverage
+failures, not configuration failures** — the instruments were working and are structurally
+incapable of seeing this activity.
 
-**Recommendation.** _(To be written. `Filtering Platform Packet Drop` must be enabled for
-scan detection; `pfirewall.log` alone is insufficient; attribution requires the source host.)_
+The evidence for that distinction is the positive control inside each negative. The 5157 query
+that failed to return the knocks **returned other events** under the identical command, which
+excludes wrong host, wrong log, wrong window, log rotation and channel-off in one stroke. The
+`pfirewall.log` that held no 9999 entry **did** hold a real `DROP` line for an ICMP packet from
+the same source address, which excludes "the file is not being written". This is the same
+argument structure as Module 03's Finding 2, where the query that missed two registry writes
+returned the third.
+
+The mechanism for each differs and both matter:
+
+- **5157 is connection-oriented.** A knock on a closed port never becomes a connection, so
+  there is never a 5157 to write. `Filtering Platform Connection` and
+  `Filtering Platform Packet Drop` are separate subcategories governing separate event
+  families, and watching only the first produces silence with no error.
+- **`pfirewall.log` never sees the packet at all**, because stealth mode discards it before
+  the rule engine — established by the controlled experiment in Finding 4, not inferred here.
+
+The operational consequence: **a port scan consists overwhelmingly of attempts against closed
+ports**, which is precisely the condition that routes the traffic away from both instruments an
+analyst reaches for first. A host firewall's own log file is therefore blind to the most common
+form of network reconnaissance there is (**T1046**).
+
+**What cannot be determined from DC01's evidence:** the sending program and the sending account,
+at all. `Process ID: 0` / `Application Name: -` is not a gap in the record — it is the correct
+value, because the field names the *local* process owning the socket and no local socket exists.
+Finding 2 establishes that this information is not recoverable from the sending host either.
+
+**Recommendation.**
+
+1. **Enable `Filtering Platform Packet Drop` (Failure) on any host where probing should be
+   detected.** It is off by default on both hosts in this lab; the module's central evidence
+   would not exist without it. Leave `Filtering Platform Connection` **Success** off — it logs
+   every permitted connection and destroys log retention, per Module 04.
+2. **Do not treat `pfirewall.log` as the scan instrument.** Its correct use is auditing
+   rule-based decisions. Where the text file and the event log disagree, the event log is the
+   more complete record — and note the two stamp time differently (`#Time Format: Local`
+   versus UTC in the event).
+3. **Query on the shape, not the event:** source address grouped against distinct destination
+   ports per short window. A single 5152 is background noise on both hosts here.
+4. **Write the attribution gap into the report explicitly.** "Source `10.0.0.20`, process and
+   account not determinable from available telemetry" is the accurate sentence, and it is more
+   useful to a reader than silence about it.
 
 ---
 
@@ -1041,14 +1404,53 @@ Row 2's rule was verified by readback, not assumed: `Enabled: True`, `Direction:
 `Action: Block`, `Profile: Public`, `Protocol: TCP`, `LocalPort: 9999`. Row 3's listener was
 a `System.Net.Sockets.TcpListener` on port 9999 held open by `powershell.exe`.
 
-**Inference.** _(To be written. Supported: stealth mode intercepts packets to closed ports
-before rules are consulted; `pfirewall.log` records a drop only after that point; 5152 names
-the local process only where one exists. Not supported and to be stated as such: why row 3
-reads `Query User Default` rather than naming the block rule — the precedence between the
-query-user filter and an explicit rule was **not** investigated and **no cause is
-established**.)_
+**Inference.** Three claims are supported by the matrix, and I assess each with **high
+confidence** because each rests on a single changed variable rather than on argument:
+
+1. **Stealth mode intercepts packets to closed ports before firewall rules are consulted.**
+   Row 2 is the load-bearing row: a rule that was present, enabled, correctly scoped and
+   verified by readback changed **nothing** — same `Filter Origin: Stealth`, same empty text
+   file. That excludes "the rule did not match", which is the explanation an analyst would
+   otherwise reach for and spend an afternoon on.
+2. **`pfirewall.log` records a drop only once a packet gets past stealth.** `LogBlocked` read
+   `Enable` throughout all three rows, so the text file's behaviour was never a logging
+   configuration problem. Row 3 flipped it by changing the port's state, not by changing any
+   logging setting.
+3. **5152 names the program on the receiving side, and only where one exists.** The field went
+   from `-` / PID 0 to `powershell.exe` at the moment a process owned the socket. It has never
+   named, and cannot name, the sender.
+
+Taken together with Finding 2, the two halves of the module meet: the receiving host's
+visibility improves exactly when the probe **succeeds**, and so does the sending host's. Both
+instruments are informative about connections that work and quiet about reconnaissance that
+does not — which is the wrong way round for detecting an attacker who has not got in yet.
+
+**Not established, and stated as such:** why row 3 reads **`Query User Default`** rather than
+naming the block rule. The rule was present, enabled and matching, and something else made the
+decision. The precedence between the query-user filter and an explicit block rule was **not
+investigated** and **no cause is established**. Nothing in this finding depends on it — rows 1
+and 2 carry the conclusion on their own — but it should not be glossed as though it were
+understood.
+
+Also not tested: whether stealth-mode behaviour is configurable on this build, and what the
+matrix would look like with it off. That is the obvious next experiment and it was not run.
 
 **Recommendation.**
+
+1. **Do not debug a "missing" firewall log entry by editing rules.** This matrix is the
+   counter-example: a correct rule changed nothing. Establish first whether the packet reached
+   the rule engine at all — `Filter Origin` in the 5152 is the field that says so.
+   `Stealth` means no rule was consulted.
+2. **Read `Filter Origin` on every packet-drop event you triage.** It distinguishes "the
+   firewall decided" from "Windows discarded it before deciding", and those are different
+   stories about the same dropped packet.
+3. **Treat an open port as the condition under which your telemetry becomes good.** Detection
+   coverage for closed-port probing has to be built deliberately (5152, aggregated) because
+   nothing provides it by default.
+4. **Follow-up tests to run:** (a) whether stealth mode can be disabled and the matrix
+   re-derived with it off; (b) what `Filter Origin` reports for a port that is open *and*
+   covered by an explicit block rule with no query-user filter involved, which is the missing
+   control for row 3.
 
 ---
 
@@ -1061,57 +1463,218 @@ packet to stealth mode and away from both instruments the run sheet told the rea
 The omission was found only after both instruments returned nothing and were separately proved
 functional. Step 2.2b was added afterwards.
 
-**Inference.** _(To be written. This is the fourth consecutive module in which a silent gate
-produced empty output with no error — Module 02's `Handle Manipulation` and `WRITE_DAC`,
-Module 03's per-key SACL, and now this. Worth stating plainly that knowing the failure mode in
-advance was not sufficient to avoid it.)_
+**The same shape recurred twice more in later sittings, in different forms.**
 
-**Recommendation.** _(To be written. Enumerate every gate and verify each by readback before
-the Break step, rather than enabling the ones the planned detection needs.)_
+- **An unfalsifiable step.** Step 7.1 was written as "run this query on WS01 and expect
+  nothing." On the first attempt WS01's `Filtering Platform Packet Drop` subcategory was still
+  `No Auditing`, so the empty result could not have come out any other way and proved nothing.
+  It became evidence only after the switch was enabled and the channel demonstrated **1040**
+  unrelated events.
+- **An unverified state change.** On 2026-09-15 the rule `LAB Block TCP9999 from WS01` was
+  reported deleted with no readback. At the start of the next sitting it was **still present
+  and enabled**, which meant the "clean baseline" every subsequent knock assumed was wrong
+  until it was checked.
+
+**Inference.** I assess with **high confidence** that the recurring defect is procedural rather
+than conceptual. This is the **fourth consecutive module** in which a silent gate produced empty
+output with no error — Module 02's `Handle Manipulation` and `WRITE_DAC` audited-rights bit,
+Module 03's per-key SACL, and now `Filtering Platform Packet Drop` — and in every case the run
+sheet *documented the failure mode in advance*. The gate table in Step 2 of this very file lists
+four switches; the build steps beneath it enabled three.
+
+The plain statement is worth making: **knowing the failure mode was not sufficient to avoid
+it.** The error lived in the gap between the design and the procedure — between a table that
+enumerates gates and a sequence of steps that happens to cover some of them. An analyst does
+not fail here from ignorance of the mechanism; they fail because the checklist and the
+understanding were never made the same artifact.
+
+The two later recurrences sharpen it into a general rule, and both are about **evidence**
+rather than configuration: a predicted negative is worthless unless the instrument has
+independently demonstrated it can produce a positive, and a state change is not a state until
+it has been read back.
+
+**What cannot be concluded:** nothing here is a claim about Windows. It is a claim about how
+this lab's procedures failed, on a sample of four modules run by one person.
+
+**Recommendation.**
+
+1. **Make the gate table the pre-flight checklist, mechanically.** Every gate named in the
+   design gets a numbered readback step immediately before the Break step, with the expected
+   string written next to it. Not prose — a list that is ticked.
+2. **Every step that predicts a negative result must be preceded by a positive control on the
+   same instrument, on the same host, in the same window.** If the control cannot be produced,
+   the step does not run. "Expect nothing" is not a test.
+3. **Never record a state change from the command that made it.** `Remove-NetFirewallRule`
+   returning silently is not evidence the rule is gone; `Get-NetFirewallRule` erroring is.
+   The same applies to `auditpol /set`, `Sysmon64.exe -c`, and every SACL change since
+   Module 02.
+4. **Carry this forward as a standing pre-flight for Modules 07–12**, since the failure has now
+   recurred in four consecutive modules and is not going to stop on its own.
 
 ---
 
-### Finding 2 — The refusal was recorded only on the refusing host
+### Finding 2 — A probe of a closed port cannot be attributed by any instrument in this lab (WS01 + DC01)
 
-**Observation.**
-_(To be written from Step 7: the identical query, its result on DC01 and its result on
-WS01, and the evidence that the WS01 log was healthy and the window correct — so the
-absence is about location, not about the query.)_
+> This finding was designed to say "the attribution is on the other machine, go and get it."
+> The run on 2026-09-15 established the opposite. The original expectation is left visible in
+> Step 7 because the route to the result is the point.
 
-**Inference.**
-_(Note that this is the same *shape* of argument as Module 03's Finding 2: a negative
-result made trustworthy by a positive control run under identical conditions.)_
+**Observation.** On **2026-09-15**, three TCP connection attempts were made from WS01
+(`10.0.0.20`) to DC01 (`10.0.0.10`) port **9999** — no listening service, no rule permitting
+it — at **22:49:36**, **22:49:59** and **22:50:00 UTC**. All three returned
+`TcpTestSucceeded: False`. All four instruments below were verified alive *before* the
+absence was interpreted.
+
+| Instrument | Host | Proof it was recording | Result for the three attempts |
+|---|---|---|---|
+| **5152** packet drop | WS01 | `Failure` by `auditpol` readback; **1040** events present | **nothing for 9999** |
+| **4688** process creation | WS01 | **330** events in the surrounding 20 minutes | **nothing** — no process is created |
+| **Sysmon Event 3** | WS01 | rule applied and read back; **373** Event 1s in the surrounding 30 minutes | **zero** |
+| **5152** packet drop | DC01 | `Failure` by `auditpol` readback | **all three recorded** — `Filter Origin: Stealth`, `Application Name: -`, `Process ID: 0` |
+
+The Sysmon rule was `<NetworkConnect onmatch="include"><DestinationPort condition="is">9999`,
+applied with `Sysmon64.exe -c` (`Configuration updated`) and confirmed present in the live
+config readback before the attempts.
+
+At **23:09:13.841 UTC**, nineteen minutes later, a `System.Net.Sockets.TcpListener` was
+started on DC01:9999 and an inbound allow rule (`LAB Allow TCP9999 from WS01`, verified by
+readback) was added. A fourth attempt — **same source host, same shell, same destination,
+same port, same unchanged Sysmon rule** — returned `TcpTestSucceeded: True` and produced
+**exactly one** Sysmon Event 3, carrying `Image: powershell.exe`, `User: CORP\Administrator`,
+`SourceHostname: WS01.corp.local`, `DestinationHostname: DC01`, `DestinationPort: 9999`,
+`Initiated: true`, `ProcessGuid: {106e60df-cae4-6aa9-ec00-000000004000}`.
+
+**The single variable that differed between 0 and 1 was whether DC01 answered.**
+
+**Inference.** I assess with **high confidence** that Sysmon's `NetworkConnect` records
+network connections that **complete**, and not connection attempts that go unanswered. The
+count pair is a controlled result rather than an observation: three attempts → 0, one
+completed connection → 1, with the rule, port, source, destination and process held constant
+and verified between them. This is structurally the same reason 5157 does not fire for a
+closed port — no connection is ever formed, so there is nothing for a connection-oriented
+instrument to record.
+
+The consequence is the finding. For a probe of a **closed** port:
+
+- the **receiving** host records the packet (5152) but **cannot** name the sender —
+  `Process ID: 0` and `Application Name: -` are not data loss, they are correct: no local
+  process owns a socket that does not exist;
+- the **sending** host records **nothing at all** — not in the firewall, not in
+  process creation, not in Sysmon.
+
+So attribution for this activity is **unavailable from any instrument configured in this
+lab**. Sysmon names the sender only once a probe finds something **open** — that is, only for
+the minority of a scan that succeeds, after the interesting part is over. Since Network
+Service Discovery (**T1046**) consists overwhelmingly of attempts against closed ports, the
+detection available here can say *that* a host was probed and *from which address*, and can
+never say *by what program* or *as which account*.
+
+**A competing explanation I cannot exclude from this evidence.** "Records completed
+connections" and "records connections that received any response" are not distinguished by
+this experiment — DC01 was silent in the negative case and completed a handshake in the
+positive one, with no intermediate condition tested. A port that actively **refuses** (sends
+an RST) rather than silently dropping would discriminate them, and that test was **not run**.
+For detection purposes the two are equivalent; for describing the mechanism they are not, and
+the stronger claim should not be made until the RST case is tested.
+
+Also not determined: whether other Sysmon versions or configurations behave differently. This
+is v15.15 / schema 4.90 on one host.
 
 **Recommendation.**
+
+1. **Do not use Sysmon Event 3 as a scan-detection instrument.** It is an *attribution*
+   instrument for connections that succeed. Configure it for that purpose — outbound to
+   sensitive ports and to external addresses — and expect it to be silent during
+   reconnaissance.
+2. **Scan detection has to come from the receiving side**, which means
+   `Filtering Platform Packet Drop` enabled (Failure) on hosts you expect to detect probing
+   against. It is **off by default**, so this is a deployment task, not a query.
+3. **Alert on the pattern, never the event.** WS01 alone holds 1040 5152s with nobody
+   attacking it. The signal is *one source address against many distinct destination ports
+   inside a short window* — group by `SourceAddress`, count distinct `DestPort`, per five
+   minutes. Baseline that count per host before choosing a threshold.
+4. **Accept the attribution gap explicitly, or close it with a different class of tool.**
+   Naming the process behind an unanswered outbound SYN needs an agent that hooks connection
+   *attempts* rather than completions, or network-level capture. Neither exists in this lab,
+   and the honest statement in a report is "source host `10.0.0.20`, process unknown".
+5. **Follow-up test to run:** a probe against a port that returns RST rather than being
+   stealth-dropped, to discriminate the two mechanisms named above.
 
 ---
 
 ### Finding 3 — Firewall rule changes are logged without attribution (DC01)
 
-**Observation.** On **DC01**, on **2026-09-14**, a firewall rule named
-`LAB Block Ping from WS01` was created through `wf.msc` and deleted a few minutes later.
-Both actions were recorded in the Security log: a **4946** for the addition and a **4948**
-for the deletion, with `MPSSVC Rule-Level Policy Change` auditing enabled for Success
-(confirmed by `auditpol` readback; all three firewall subcategories read `No Auditing` on
-both hosts before the run).
+**Observation.** All timestamps UTC; the screenshots display WAT (UTC+1).
 
-The 4948's fields are **Profile Changed**, **Rule ID** and **Rule Name**. `.Message` adds
-nothing beyond those. `Event.System.Security` — the event-header slot that carries the SID
-of the causing account on many event types — is **empty**. The same header check run
-against the 4946 as a control is **also empty**.
+Before the run, all three firewall subcategories read **`No Auditing`** on both hosts
+(`auditpol` readback, **2026-09-13 13:08**), with `LogAllowedConnections` and
+`LogDroppedConnections` both `Disable` and `Firewall Policy: BlockInbound,AllowOutbound`.
 
-Background volume on a host nobody attacked: **four** 4946 events and **seven** 4948 events
-were present. Three of the four 4946s were written by Windows itself overnight, with no
-administrator action; the hand-written rule was the **oldest** of the four.
+On **DC01** a rule named **`Lab Block Ping from ws01`** was created through `wf.msc` at
+**2026-09-13 13:39:31**, recorded as a **4946** with fields `ProfileChanged: (null)`,
+`RuleId {13BD1F31-AA25-4461-85E5-3A6241022751}`, `RuleName`. It was deleted later in the same
+sitting, recorded as a **4948**.
 
-**Inference.** _(To be written: what can and cannot be concluded. Note the scope — two
-events of one family on one host, not a general claim about every Windows build. Note that
-the volume figures make "a firewall rule changed" unusable as an alert on its own.)_
+Three further 4946 events were written at **2026-09-14 07:28:15**, all within the same second,
+with no administrator action — so of the four 4946s present, the hand-written one was the
+**oldest**, and `-MaxEvents 1` returns one of the three unattended events instead.
 
-**Recommendation.** _(To be written: correlation against process-creation evidence —
-**4688** on DC01, which has no Sysmon, versus Sysmon **Event 1** on WS01, which does. The
-same move as Module 03's Finding 1, where Event 1 turned "a registry value changed" into
-"this account ran this command".)_
+Across the whole module the fields of 4946 and 4948 are **Profile Changed**, **Rule ID** and
+**Rule Name**, and nothing else. `.Message` adds nothing beyond them.
+`Event.System.Security` — the event-header slot that carries the SID of the causing account on
+many event types — is **empty**, with every other header field populated
+(`EventRecordID`, `Channel: Security`, `Computer: DC01.corp.local`).
+
+Four events of the family were checked this way across two sittings:
+
+| Event | Rule | Time | `Security` header |
+|---|---|---|---|
+| 4946 | `Lab Block Ping from ws01` | 2026-09-13 13:39:31 | — |
+| 4948 | `lab Block tcp9999 from ws01` | 2026-09-15 21:57:30 | **empty** |
+| 4946 | (control, `EventRecordID 37073`) | 2026-09-15 | **empty** |
+| 4946 | `Lab Allow TCP9999 from WS01`, `ProfileChanged: All` | 2026-09-15 23:28 | — |
+
+Background volume on a host nobody attacked: **four** 4946 and **seven** 4948 events.
+
+**Inference.** I assess with **high confidence** that, on this host and build, 4946 and 4948
+do not carry the account responsible for the change — in their fields or in the event header.
+The field extraction was run on **four** events of the family across three sittings, three of
+them created by hand at known times, and none carried an account. The header check was run on
+**two** — a 4948 and a 4946 as control — and both came back empty while every other header
+field on those same events was populated.
+
+**Scope, stated deliberately:** this is two event IDs, on one host, on one Windows Server 2022
+build. It is not a general claim about every Windows version, and it would be wrong to write it
+into a report as one.
+
+The volume figures carry a second, more operationally important conclusion. DC01 held **four**
+4946s and **seven** 4948s with nobody attacking it, and **three of the four** 4946s were written
+by Windows itself overnight with no administrator action. So **"a firewall rule changed" is
+unusable as an alert on its own** — it would fire on routine platform behaviour and be tuned out
+within a week. The hand-written rule was also the **oldest** of the four, so `-MaxEvents 1`
+returns the wrong event with no error.
+
+The combination — no attribution, and a noisy baseline — means this event family cannot answer
+either question an analyst has about a firewall change: *who* and *is this unusual*. It can only
+answer *what*, and only if you already know which rule name to look for.
+
+**Recommendation.**
+
+1. **Correlate against process creation on the same host and window.** On WS01 that is Sysmon
+   **Event 1**, which carries the command line, `User` and `IntegrityLevel` in one record — the
+   move that turned Module 03's Finding 1 from "a value changed" into "this account ran this
+   command". On DC01 it is **4688** only, and 4688 will not see a change made through `wf.msc`
+   in an already-open window (Finding 2's 7.2 result), so the correlation there is weaker.
+2. **Install Sysmon on DC01.** The lab's attribution capability is currently asymmetric — the
+   host that gets attacked cannot name actors, the host that can name them is not the target.
+   That asymmetry is backwards and it is worth fixing before the Active Directory modules.
+3. **Alert on named rules, not on rule changes.** Maintain a small list of security-relevant
+   rules whose *deletion* matters (**T1562.004**) and alert on `Rule Name` matching that list
+   in a 4948. Ignore the general stream.
+4. **Baseline the unattended rate per host first.** Four and seven in this lab; measure it
+   before choosing any threshold elsewhere.
+5. **Identify events by `Rule Name`, never by position.** `| Select-Object -Last 1` takes the
+   oldest of a newest-first list, and neither is a substitute for checking the name.
 
 ---
 
@@ -1128,6 +1691,8 @@ same move as Module 03's Finding 1, where Event 1 turned "a registry value chang
 | **4946** | Security | A rule was **added** to the firewall exception list. Fields: Profile Changed, Rule ID, Rule Name. **No account** — verified 2026-09-14 |
 | **4947** | Security | A firewall rule was **modified** |
 | **4948** | Security | A firewall rule was **deleted** — the one an attacker generates. Same three fields, **no account** — verified 2026-09-14 |
+| **3** | `Microsoft-Windows-Sysmon/Operational` | Sysmon **network connection**. Carries `Image`, `User`, `ProcessGuid`, `Initiated`, and both endpoints **with hostnames resolved**. **Records connections that complete — verified 2026-09-15 to produce nothing at all for three unanswered attempts and exactly one for a completed one, same rule.** An attribution instrument, not a scan-detection instrument |
+| **1** | `Microsoft-Windows-Sysmon/Operational` | Sysmon process creation. Join to Event 3 on **`ProcessGuid`** to recover the command line behind a connection |
 
 ### Reading the firewall
 
@@ -1152,6 +1717,47 @@ Candidates — confirm the IDs against attack.mitre.org before putting them in t
 
 ## Notes & gotchas
 
+- **A mistyped event ID looks exactly like a genuine absence.** `Id=49466` instead of `4946`
+  returns `No events were found that match the specified selection criteria` /
+  `NoMatchingEventsFound` — the identical message a real empty result gives. On 2026-09-15 that
+  typo briefly looked like DC01's 4946 events had been destroyed by log rotation, and a
+  rotation theory was half-built on it before the retype cleared it. **Suspect the query before
+  the host.** The screenshot preserves both the typo and the correct run.
+- **`auditpol /get /subcategory: "…"` with a space after the colon fails** with
+  `Error 0x00000057 … The parameter is incorrect.` and dumps the usage text, which reads like a
+  broken tool rather than a typo. No space: `auditpol /get /subcategory:"Filtering Platform
+  Connection"`.
+- **Rule names come back exactly as typed, case and all.** The evidence holds
+  `Lab Block Ping from ws01`, `lab Block tcp9999 from ws01` and `Lab Allow TCP9999 from WS01` —
+  three different capitalisations of the same naming scheme. `-DisplayName` matching is
+  case-insensitive, so this bites only when you compare strings by eye. Findings must quote the
+  name as the log prints it, not as the run sheet planned it.
+- **`ProfileChanged` reads `(null)` for a rule scoped to one profile and `All` for
+  `-Profile Any`.** Verified across two 4946s. It is not an account field and never becomes one.
+- **Sysmon Event 3 does not see a probe of a closed port.** Verified 2026-09-15 with a rule
+  scoped to exactly that port, applied and read back beforehand: **0** events for three
+  unanswered knocks, **1** for a single connection that completed, with nothing else changed.
+  Sysmon names the sender only once the probe finds something open. Do not plan a scan
+  detection around it.
+- **A predicted negative needs a positive control on the same instrument, or it is not
+  evidence.** Every silence in this module was made trustworthy by a number next to it — 1040
+  unrelated 5152s on WS01, 330 unrelated 4688s, 373 unrelated Sysmon Event 1s. A step written
+  as "run this and expect nothing" proves nothing at all when the instrument is off, which is
+  exactly what happened on the first attempt at Step 7.1.
+- **`Test-NetConnection` creates no process, so it writes no 4688.** It is a cmdlet inside a
+  shell that is already running. More generally: **process-creation logging records a program
+  starting, not what it does afterwards** — a shell open for an hour writes one 4688 and then
+  does a hundred invisible things. Script block logging (4104, Module 05) is what covers that
+  gap, not 4688.
+- **A `Remove-` that ran is not a rule that is gone.** `LAB Block TCP9999 from WS01` was
+  reported deleted on 2026-09-15 with no readback and was still present and enabled at the
+  start of the next sitting. Every state change gets a `Get-` afterwards — firewall rules,
+  `auditpol /set`, Sysmon config, SACLs.
+- **A `TcpListener` dies with the PowerShell session that created it.** It is not a service.
+  Closing the window, or the VM shutting down, releases the port with no trace.
+- **A `NetworkConnect` element can sit directly under `<EventFiltering>`**, as a sibling of an
+  existing `<RuleGroup>` — verified 2026-09-15. It does not have to be inside a rule group.
+  Scope it with `condition="is"` on a port, not `contains`, which would also match 19999.
 - **A rule on the wrong profile does nothing, silently.** A rule ticked for a profile that
   is not active is present, enabled, correct-looking, and inert. Check the active profile in
   `wf.msc` on **each machine separately** before debugging anything else — on 2026-09-13 WS01

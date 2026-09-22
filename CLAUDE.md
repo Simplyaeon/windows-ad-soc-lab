@@ -38,8 +38,10 @@ rather than trying to inspect anything directly.
 **Read `summary.md` first** — it carries the current status, the per-module findings, and
 the next steps, and is the file to update as modules complete. Modules 00–05 are complete
 with findings written and evidence in `assets/`; `main` is pushed through **Module 03**.
-**Module 06 is IN PROGRESS** (written 2026-09-13; sittings 1–3 run 2026-09-14 → 2026-09-15,
-not finished) — see its section below. The rest are planned — see `SOC-Analyst-Roadmap.md`.
+**Module 06 is NEARLY COMPLETE** (written 2026-09-13; four sittings 2026-09-13 → 2026-09-16;
+lab work done, all five findings written, ten screenshots filed — only six Step 8 readbacks and
+two screenshots outstanding) — see its section below. The rest are planned — see
+`SOC-Analyst-Roadmap.md`.
 
 Only what a session can't get from those files is kept here: the blockers, the measured
 baselines, and the traps.
@@ -200,12 +202,13 @@ Windows writes to constantly when idle. Per Module 04, that is how older evidenc
 **Do not edit Winlogon `Userinit` or `Shell` on WS01.** A bad value boots to a blank screen with no
 shell, recoverable only by snapshot restore. `Run` keys fail harmlessly; those two do not.
 
-### Module 06 (Windows Firewall) — IN PROGRESS, not complete
+### Module 06 (Windows Firewall) — NEARLY COMPLETE
 
-Written 2026-09-13 (`labs/06-windows-firewall.md`); sittings 1–3 run 2026-09-14 → 2026-09-15,
-**both VMs**. The run sheet has been rewritten from the run and its findings carry verified
-observations; **inference and recommendation sections are still stubs**, evidence is not yet in
-`assets/`, and Steps 8–9 are not done.
+Written 2026-09-13 (`labs/06-windows-firewall.md`); four sittings 2026-09-13 → 2026-09-16,
+**both VMs**. The run sheet is rewritten from the run, **all five findings are complete**
+(observation → inference → recommendation), Step 7 is rewritten as 7.0–7.7, the Step 8 baseline
+table is built with unread cells left visibly unread, and ten screenshots are filed in
+`assets/`. Outstanding: six `Get-NetFirewallProfile` readbacks and two screenshots.
 
 **The module's result, established by controlled experiment and not by argument.** Three TCP
 knocks from WS01 to DC01 port 9999 (nothing listening, no rule) produced **nothing** in
@@ -240,6 +243,19 @@ A port scan is overwhelmingly closed ports, so the firewall's own log file is bl
 
 **Traps this module added, beyond the ones already listed further down:**
 
+- **Sysmon Event 3 does not see a probe of a closed port** — verified 2026-09-16 by controlled
+  experiment (0 for three unanswered knocks, 1 for one completed connection, rule unchanged).
+  It is an *attribution* instrument for connections that succeed, not a scan detector.
+- **A mistyped event ID is indistinguishable from a genuine absence.** `Id=49466` returns
+  `NoMatchingEventsFound` — the same message as a real empty result. It briefly looked like log
+  rotation had destroyed DC01's 4946s. **Suspect the query before the host**, and retype before
+  theorising.
+- **`auditpol /get /subcategory: "…"` with a space after the colon** fails with
+  `Error 0x00000057 … The parameter is incorrect.` and dumps usage text that reads like a broken
+  tool rather than a typo.
+- **A terminal screenshot with no hostname in the frame is weak evidence.** Both VMs prompt
+  `PS C:\Users\Administrator>`. `06-auditpol-before.png` is a genuine, unrepeatable baseline whose
+  host can no longer be established. Put `hostname` at the top of any capture meant as evidence.
 - **A knock on a closed port is a *packet*, never a *connection*.** `Filtering Platform
   Connection` (5156/5157) and `Filtering Platform Packet Drop` (5152/5153) are **separate
   subcategories**. Watching only the first gives silence with no error.
@@ -264,35 +280,78 @@ A port scan is overwhelmingly closed ports, so the firewall's own log file is bl
    MB/day in August. The window included a boot, so it may not be a real rate change. **Not
    measured properly.** If it is real, WS01's Security log fills in about a day.
 
-**Lab state left behind (2026-09-15):**
+**Sitting 4 (2026-09-16) closed the attribution question the other way.** Sysmon was armed
+*before* the break with `<NetworkConnect onmatch="include"><DestinationPort condition="is">9999`,
+applied and confirmed in the live-config readback. **Three unanswered knocks → 0 Event 3s**
+(against 373 Event 1s in the same window). Then a `TcpListener` plus a readback-verified inbound
+**allow** rule on DC01 made the far end answer: the identical knock returned `True` and produced
+**exactly one** Event 3 — `Image …\powershell.exe`, `User CORP\Administrator`,
+`SourceHostname WS01.corp.local`, `DestinationHostname DC01`, `Initiated true`, `ProcessGuid`
+joining to Event 1. **One variable moved: whether DC01 answered.**
+
+So **Sysmon `NetworkConnect` records connections that COMPLETE, not attempts that go
+unanswered** — the same structural reason 5157 never fires for a closed port. **Finding 2 was
+rewritten**: no instrument in this lab can attribute a probe of a closed port. Not
+distinguishable from this evidence: "completed" vs "received any response" — an **RST** test
+would discriminate and has **not** been run.
+
+**Lab state left behind (2026-09-16):**
 
 - **`mod06-start` snapshots exist on both VMs.**
 - **Audit switches left ON deliberately**, both VMs: `Filtering Platform Connection` = Failure,
   `MPSSVC Rule-Level Policy Change` = Success, `Filtering Platform Packet Drop` = Failure.
+  All re-read on 2026-09-16 except `Filtering Platform Connection`/DC01 and `MPSSVC`/WS01.
   **`Filtering Platform Connection` Success is deliberately OFF** — it logs every *allowed*
   connection and would destroy the log per Module 04.
 - **`LogBlocked` = True**, on **DC01/Public** and **WS01/Domain** — the profiles that are actually
-  active, which differ per machine.
-- `LAB Block Ping from WS01` **deleted and confirmed** (ping returned `True`).
-- **`LAB Block TCP9999 from WS01` — deletion NOT confirmed.** The user was asked to delete it and
-  never reported back. **Check before assuming.** Likewise `$listener.Stop()` was issued in a block
-  the user ran but never separately confirmed; port 9999 should be closed, verify rather than trust.
-- **Sysmon on WS01 is still registry-only**, so **Event 3 (network connection) is NOT enabled** —
-  which is exactly what the unfinished part of the module needs.
+  active, which differ per machine. **Not re-read on 2026-09-16.**
+- **All lab firewall rules gone, both deletions confirmed by readback.** `Lab Block Ping from
+  ws01`, `lab Block tcp9999 from ws01` and `Lab Allow TCP9999 from WS01` all return
+  "no matching objects found"; port 9999 confirmed closed.
+- **`lab Block tcp9999 from ws01` was found still present and enabled on 2026-09-16**, having
+  been reported deleted on 2026-09-15 with no readback. **A `Remove-` that ran is not a rule that
+  is gone.** This is now Finding 5's third instance.
+- **Sysmon on WS01 now carries the `NetworkConnect` rule** alongside the registry group — scoped
+  to `DestinationPort is 9999` only, so it cannot flood. **Leave it; Module 07 extends this group
+  to RDP rather than rebuilding it.** Verified: a `NetworkConnect` element sits legally as a
+  direct child of `<EventFiltering>`, as a sibling of the existing `<RuleGroup>`.
+- **DC01 is still on the `Public` profile** after an unplanned shutdown and reboot on 2026-09-16
+  (`06-firewall-profiles.png`). Still no cause established.
+- **DC01 shut down unexpectedly mid-sitting** on 2026-09-16. The 1074/6008 diagnosis was
+  **deliberately skipped by the user**; cause unknown. Eval-licence expiry is the known prior
+  (2026-09-04), not a verified cause here.
 
-**What is left to finish Module 06:** add a **narrowly scoped** `NetworkConnect` rule to
-`C:\Tools\sysmon-registry.xml` on WS01 (scope it tightly — WS01 talks to DC01 constantly and a
-broad rule floods), re-knock, and recover the sending process and account as **Sysmon Event 3**.
-That closes the attribution gap the module found: neither firewall log nor 4688 can name what made
-the connection. Then Steps 8–9, the screenshots, and the inference/recommendation halves of
-Findings 1, 4 and 5.
+**What is left to finish Module 06 — clerical only:** six `Get-NetFirewallProfile` readbacks for
+the Step 8 baseline table (currently marked `(unread)` rather than filled from memory), and two
+screenshots — `06-5152-ws01-empty.png`, and `06-sysmon3-zero.png` which must be **re-derived**
+(three fresh knocks at the now-closed port leaving the count unchanged at 1) because the zero
+state no longer exists.
 
-**Two screenshots already exist in the user's `Downloads`** (the `Filter Origin: Stealth` event and
-the rule readback) and should be moved into `assets/` as `06-5152-stealth.png` and
-`06-rule-verified.png`. Nothing else was captured, and **no `.evtx` export was taken** — a
-deliberate decision by the user on 2026-09-15, on the grounds that lab activity is regenerable on
-demand. If logs roll, the timestamps cited in the findings must be regenerated and the findings
-edited to match.
+**Ten screenshots are filed in `assets/`**, each verified against its actual contents before
+filing rather than trusted by filename: `06-5152-stealth.png`, `06-rule-verified.png`,
+`06-sysmon-attribution.png`, `06-auditpol-before.png`, `06-firewall-profiles.png`,
+`06-4946-rule-added.png`, `06-4946-allow-rule-added.png`, `06-4948-rule-deleted.png`,
+`06-4948-extended.png`, `06-no-attribution.png`. **No `.evtx` export was taken** — a deliberate
+decision by the user on 2026-09-15, on the grounds that lab activity is regenerable on demand. If
+logs roll, the timestamps cited in the findings must be regenerated and the findings edited to
+match.
+
+**Three things reading the screenshots corrected, which is why they must be read and not
+trusted by filename:**
+
+1. **`06-auditpol-before.png` exists and is genuine** (2026-09-13 14:08) — it had been written
+   off in-session as uncapturable. **Which host it is from is not recoverable from the frame**;
+   the prompt is `PS C:\Users\Administrator>` on both machines. A terminal screenshot without a
+   hostname is weak evidence — put `hostname` at the top of the capture.
+2. **The "DC01's 4946s have vanished" scare was a typo**, preserved in `06-no-attribution.png`:
+   `Id=49466` returns `NoMatchingEventsFound`, the **identical** message a genuine empty result
+   gives. A log-rotation theory was half-built on it before the retype cleared it. **Suspect the
+   query before the host.**
+3. **Rule names in the log differ in case from the run sheet's**: `Lab Block Ping from ws01`,
+   `lab Block tcp9999 from ws01`, `Lab Allow TCP9999 from WS01`. `-DisplayName` matching is
+   case-insensitive so it only bites when comparing by eye — but findings must quote what the log
+   printed. Also verified: `ProfileChanged` reads `(null)` for a single-profile rule and `All`
+   for `-Profile Any`.
 
 ## How to work on this
 
