@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-15_
+_Last updated: 2026-09-24_
 
 ---
 
@@ -36,6 +36,7 @@ starts from).
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
 | `labs/06-windows-firewall.md` | **Module 06, nearly complete** — written 2026-09-13, four sittings 2026-09-13 → 2026-09-16, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
+| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, not yet run** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. Includes the NLA controlled experiment and reserves Finding 5 for whichever prediction the run kills |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -60,7 +61,7 @@ starts from).
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — 3 sittings run, not finished |
-| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | ⬜ Planned |
+| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25 | 🟡 Written, not yet run |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
@@ -352,7 +353,38 @@ Every lab (via the template) is laid out identically:
   and `06-sysmon3-zero.png`, which must be **re-derived rather than recreated**: the zero state
   no longer exists, so the honest capture is three fresh knocks at the now-closed port leaving
   the count unchanged at 1.
-- ⬜ Modules 07–12 planned but not yet expanded
+- 🟡 **Module 07 (Remote Desktop) written 2026-09-22, not yet run.** A two-VM sheet in which
+  DC01 connects to WS01 and **the evidence lands almost entirely on the target** — the reverse of
+  Module 06. The module's subject is **correlation**: one session is scattered across four logbooks
+  (Security **4624 Type 10**/4625, RemoteConnectionManager **1149**, LocalSessionManager
+  **21/22/23/24/25**, Sysmon Event 3), and the deliverable is the join — naming the field that
+  proves two entries are the *same* session, and saying plainly if no single field spans all four.
+  The session is made deliberately messy — log on, **disconnect**, reconnect, log off — because
+  **disconnecting is not logging off**: the 24/25 pair is Windows recording a session abandoned and
+  left running, the precondition for RDP hijacking (T1563.002).
+
+  **The module carries Module 06's result forward as a falsifiable hypothesis**, not as an
+  assumption: that the instruments go quiet exactly when the attempt does *not* succeed, with **NLA**
+  as the mechanism. Step 9 tests it by failing the identical logon twice, NLA on then off — one
+  variable. Either outcome is a result, and **Finding 5 is reserved in advance** for whichever of the
+  sheet's predictions the run kills, in the spirit of Module 06's Finding 5.
+
+  **Predictions are marked as predictions throughout**, because none of them could be checked from
+  the authoring machine: the NLA hypothesis itself; **Logon Type 3 rather than 10** on a failed RDP
+  logon (which would silently break any detection rule written only for Type 10); `UserData` rather
+  than `EventData` for the TerminalServices events (the trap Module 04 first met with 1102); whether
+  those two channels are enabled by default at all; and whether Sysmon Event 3 fires on the
+  **receiving** end of an inbound connection, which Module 06 never tested.
+
+  **Verified against the repo while writing**, not recalled: Module 01 **Step 0.3 enabled `Logon`
+  and `Logoff` on WS01 specifically**, not only DC01; `asmith` was created in Module 01 and never
+  deleted (only `svc_backup` was); the domain carries Module 01's **5-attempt / 10-minute lockout
+  policy**, which Steps 8–9 could trip since each fails a logon on purpose; and `.gitignore` covers
+  `*.evtx`, so Step 6.6's export stays out of the repo. **Order-critical:** Module 06's
+  `06-sysmon3-zero.png` must be re-derived **before** Step 3, which **extends** the existing Sysmon
+  `NetworkConnect` group to port 3389 rather than rebuilding it — Module 03's registry rules depend
+  on that file.
+- ⬜ Modules 08–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through Module 05, evidence included
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
@@ -398,8 +430,15 @@ Modules 01/04/05 is sound and needs no change.
    screenshots are filed. What remains is clerical: (a) the six `Get-NetFirewallProfile`
    readbacks that fill the Step 8 baseline table — currently marked `(unread)` rather than
    filled from memory; (b) two screenshots, `06-5152-ws01-empty.png` and `06-sysmon3-zero.png`
-   (the latter re-derived, since the zero state is gone). Then Module **07 (RDP)**, which
-   inherits both the Sysmon install and the `NetworkConnect` group added here.
+   (the latter re-derived, since the zero state is gone). **Do the `06-sysmon3-zero.png`
+   re-derivation before anything else in that sitting** — Module 07 Step 3 edits the Sysmon
+   config and the zero state cannot be captured afterwards.
+2c. **Run Module 07 (RDP), Sitting 1 — Steps 0–3.** The run sheet is written. The sitting closes
+   out Module 06, takes **`mod07-start`** on both VMs (the clean baseline Module 03 still lacks),
+   proves all four logbooks are enabled and records their "before" counts, enables RDP with NLA
+   **on**, adds `asmith` to Remote Desktop Users, and extends Sysmon's `NetworkConnect` group to
+   port 3389. **It triggers nothing** — the first RDP connection is Sitting 2, so that every
+   instrument is verified before any activity exists to be missed.
 2b. **Optional follow-up experiments Module 06 named but did not run**, each written into the
    findings as an open question rather than glossed: (i) probe a port that returns **RST**
    instead of being stealth-dropped, to discriminate "Sysmon logs completed connections" from
