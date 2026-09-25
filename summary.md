@@ -404,9 +404,12 @@ Every lab (via the template) is laid out identically:
   is active** (it lists all three as `Enabled: True`); `Get-NetConnectionProfile` does, and WS01
   returned `DomainAuthenticated`.
 
-  **Carried forward as unknown rather than done:** `sysmon-registry.xml.bak`,
-  `assets/07-sysmon-config.png`, the schema version in the readback, and the **4732** expected from
-  the group addition. **Resume at Step 4 — the break**, which is the sitting that produces the
+  **Closed after the sitting:** `sysmon-registry.xml.bak` exists, the live-config screenshot was
+  captured, and the schema version reads **4.90**. **Still open, written into the run sheet as a
+  start-of-next-session checklist:** move `07-sysmon-config.png` and `07-4947-rules-modified.png`
+  onto the Mac and into `assets/` — they exist on the Windows machine but not in the repo, and the
+  second is the only image evidence behind this sitting's result — and find the **4732** from the
+  group addition. **Resume at Step 4 — the break**, which is the sitting that produces the
   deliverable.
 
   **The module carries Module 06's result forward as a falsifiable hypothesis**, not as an
@@ -480,6 +483,12 @@ Modules 01/04/05 is sound and needs no change.
    is unaffected; the missing item is the illustration, not the evidence. Optionally also file the
    2026-09-15 `Test-NetConnection` capture of the three unanswered knocks as Module 06 evidence —
    it is Finding 2's ground truth and identifies its own host via `SourceAddress : 10.0.0.20`.
+2d. **Start the next session with the four-item checklist** now written into
+   `labs/07-remote-desktop.md` ("Start the next session with these"): two screenshots to move into
+   `assets/` (`07-sysmon-config.png`, `07-4947-rules-modified.png`), the **4732** from the Step 3.1
+   group addition to find on WS01, Module 06's `06-5152-ws01-empty.png`, and optionally filing the
+   2026-09-15 `Test-NetConnection` capture as Module 06 evidence. **None of it blocks Step 4.**
+
 2c. **Run Module 07 (RDP), Sitting 2 — Steps 4–7.** ✅ Sitting 1 is **complete** (2026-09-25):
    `mod07-start` taken on both VMs, all four logbooks proved alive and baselined, RDP on with NLA
    on, `asmith` permitted, Sysmon armed for 3389. Nothing has been triggered yet, which is the

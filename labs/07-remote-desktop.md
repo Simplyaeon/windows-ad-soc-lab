@@ -201,15 +201,46 @@ independent readback rather than by the action appearing to succeed.
 **Resume at Step 4 — the break.** That is the sitting that produces the deliverable; do not start
 it with twenty minutes left.
 
-**Unconfirmed, carried forward as unknown rather than done:**
+**Closed after the sitting** (reported 2026-09-25): `C:\Tools\sysmon-registry.xml.bak` **exists**,
+the live-config screenshot **was captured on WS01**, and the readback's schema version reads
+**4.90** — matching the v15.15 build on record, and confirming `-c` was printing the live config
+rather than echoing the file.
 
-- **`C:\Tools\sysmon-registry.xml.bak`** — the backup copy was issued in the same message as the
-  edit and never confirmed. It may or may not exist.
-- **`assets/07-sysmon-config.png`** — the live-config screenshot was asked for and not confirmed
-  captured. The Sysmon config **can** be re-read at any time with `.\Sysmon64.exe -c`, so this is
-  recoverable, unlike Module 06's dropped one.
-- **Schema version** in the live readback was not reported back.
-- **The 4732** expected from the Step 3.1 group addition was not looked for.
+### Start the next session with these
+
+Four items, left deliberately rather than forgotten. **None blocks Step 4**, and only the first
+two decay with time.
+
+**1. Move two screenshots onto the Mac and into `assets/`.** Both exist on the Windows machine but
+**not in the repo** — screenshots pasted into a chat do not land on disk.
+
+| File | What it shows | Why it matters |
+|---|---|---|
+| `07-sysmon-config.png` | the `.\Sysmon64.exe -c` live readback | proves both ports **and** Module 03's registry rules loaded together |
+| `07-4947-rules-modified.png` | the `Remote Desktop` rule table **and** the 4946/4947/4948 query, one frame | **the evidence behind this sitting's whole result** — three `Profile: Any` rules, the seven-4947 burst at 10:39:25–26 local, and the absent 4946. Finding 5 currently rests on text with no image behind it |
+
+**2. Find the 4732** from the Step 3.1 group addition, on **WS01**:
+
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4732; StartTime=(Get-Date).AddHours(-3)} | Select-Object TimeCreated, Id
+```
+
+Widen the window if the sitting is on a later day. "A member was added to a security-enabled
+**local** group" — the local-scope cousin of Module 01's 4728; `Computer` is the field that tells a
+machine-local group from a domain one. **An empty result is interesting, not broken** — check the
+subcategory before concluding anything.
+
+**3. Module 06's last item — `06-5152-ws01-empty.png`.** Still capturable at any time, and Module
+06 cannot be called complete without it. `06-sysmon3-zero.png` is **permanently outstanding**:
+Step 3.2 has added 3389 to the config, so the zero state can no longer be re-derived.
+
+**4. Optional — file the 2026-09-15 `Test-NetConnection` capture as Module 06 evidence.** Three
+knocks to `10.0.0.10:9999`, all `TcpTestSucceeded: False` with `PingSucceeded: True` at 1 ms. It is
+**Finding 2's ground truth** — a closed port on a *live* host, not an unreachable host — and it
+identifies its own machine from inside the frame via `SourceAddress : 10.0.0.20`, which is stronger
+than the `PS C:\Users\Administrator>` prompt that left `06-auditpol-before.png` unattributable.
+
+**Then Step 4.** Give it a clear run — it is the sitting that produces the deliverable.
 
 ### Carried over from Module 06
 
