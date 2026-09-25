@@ -145,12 +145,15 @@ pressure, which also lowers the urgency of the Step 6.6 export.
 
 ### Where the sitting stopped
 
-**Step 2.1 was issued but not confirmed.** `SystemPropertiesRemote.exe` was handed over with
-instructions to enable Remote Desktop and leave NLA ticked; **no confirmation was pasted back**,
-so the state of that dialog is **unknown**. Resume by running the Step 2.2 registry readback
-first — it reports what is actually set, whichever way the dialog went.
+**Step 2.1 was NOT done** — confirmed by the user at the end of the sitting. Remote Desktop was
+**not** enabled; `SystemPropertiesRemote.exe` was handed over but the dialog was never applied.
+So WS01 is still in its pre-module state as far as RDP is concerned, and the `mod07-start`
+snapshot remains an accurate baseline of the machine as it stands.
 
-**Not started:** Steps 2.2, 2.3, 3.1, 3.2.
+**Resume here: Step 2.1.** Nothing needs re-reading first — every Step 0 and Step 1 value above
+was taken after the snapshot and none of them has been changed since.
+
+**Not started:** Steps 2.1, 2.2, 2.3, 3.1, 3.2.
 
 ### Carried over from Module 06
 
