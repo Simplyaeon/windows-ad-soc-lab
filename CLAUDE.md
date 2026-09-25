@@ -38,9 +38,10 @@ rather than trying to inspect anything directly.
 **Read `summary.md` first** — it carries the current status, the per-module findings, and
 the next steps, and is the file to update as modules complete. Modules 00–05 are complete
 with findings written and evidence in `assets/`; `main` is pushed through **Module 03**.
-**Module 06 is NEARLY COMPLETE** (written 2026-09-13; four sittings 2026-09-13 → 2026-09-16;
-lab work done, all five findings written, ten screenshots filed — only six Step 8 readbacks and
-two screenshots outstanding) — see its section below. The rest are planned — see
+**Module 06 is NEARLY COMPLETE** (written 2026-09-13; four sittings 2026-09-13 → 2026-09-16,
+plus a closeout sitting 2026-09-25; lab work done, all five findings written, ten screenshots
+filed, **Step 8 baseline table now fully read on both VMs** — only **two screenshots**
+outstanding) — see its section below. The rest are planned — see
 `SOC-Analyst-Roadmap.md`.
 
 Only what a session can't get from those files is kept here: the blockers, the measured
@@ -207,8 +208,8 @@ shell, recoverable only by snapshot restore. `Run` keys fail harmlessly; those t
 Written 2026-09-13 (`labs/06-windows-firewall.md`); four sittings 2026-09-13 → 2026-09-16,
 **both VMs**. The run sheet is rewritten from the run, **all five findings are complete**
 (observation → inference → recommendation), Step 7 is rewritten as 7.0–7.7, the Step 8 baseline
-table is built with unread cells left visibly unread, and ten screenshots are filed in
-`assets/`. Outstanding: six `Get-NetFirewallProfile` readbacks and two screenshots.
+table is **complete — every cell read on one machine or the other**, the last of them on
+2026-09-25 — and ten screenshots are filed in `assets/`. Outstanding: **two screenshots only**.
 
 **The module's result, established by controlled experiment and not by argument.** Three TCP
 knocks from WS01 to DC01 port 9999 (nothing listening, no rule) produced **nothing** in
@@ -321,11 +322,24 @@ would discriminate and has **not** been run.
   **deliberately skipped by the user**; cause unknown. Eval-licence expiry is the known prior
   (2026-09-04), not a verified cause here.
 
-**What is left to finish Module 06 — clerical only:** six `Get-NetFirewallProfile` readbacks for
-the Step 8 baseline table (currently marked `(unread)` rather than filled from memory), and two
-screenshots — `06-5152-ws01-empty.png`, and `06-sysmon3-zero.png` which must be **re-derived**
-(three fresh knocks at the now-closed port leaving the count unchanged at 1) because the zero
-state no longer exists.
+**What is left to finish Module 06 — two screenshots.** The six `Get-NetFirewallProfile`
+readbacks were taken on **2026-09-25** and the Step 8 table is now fully populated from command
+output on both VMs. Remaining: `06-5152-ws01-empty.png`, and `06-sysmon3-zero.png` which must be
+**re-derived** (three fresh knocks at the now-closed port leaving the count unchanged at 1)
+because the zero state no longer exists — **and which must be captured before Module 07 Step 3
+edits the Sysmon config.**
+
+**The 2026-09-25 readbacks closed three open unknowns.** `LogBlocked` **survived the
+2026-09-16 reboot** on both machines, each on its own active profile only (`Domain` for WS01,
+`Public` for DC01) — it had been set on 2026-09-15 and never re-read, so this was genuinely
+unknown. **DC01 is still on `Public`**, a third sighting and the first via
+`Get-NetConnectionProfile` rather than the GUI, which rules out a reading artifact and leaves the
+anomaly standing with no cause. And two new traps entered the gotchas list: **`Get-NetFirewallProfile`
+reads the *configured* store by default**, returning `DefaultInboundAction: NotConfigured` — which
+means "nothing explicitly set here", **not** "no default applies"; `-PolicyStore ActiveStore`
+returned **Block inbound / Allow outbound** on both hosts, reconciling with the
+`BlockInbound,AllowOutbound` already on record. And **`LogFileName` is stored as a literal
+`%systemroot%\...`**, which PowerShell does not expand.
 
 **Ten screenshots are filed in `assets/`**, each verified against its actual contents before
 filing rather than trusted by filename: `06-5152-stealth.png`, `06-rule-verified.png`,

@@ -251,9 +251,9 @@ Every lab (via the template) is laid out identically:
 - 🟡 **Module 06 (Windows Firewall) — nearly complete.** Written 2026-09-13, run across four
   sittings 2026-09-13 → 2026-09-16 on **both VMs** (the first two-VM module since 01). The run
   sheet is rewritten from the run, **all five findings are complete** (observation → inference
-  → recommendation), and **ten screenshots are filed in `assets/`**. Outstanding: six
-  `Get-NetFirewallProfile` readbacks for the Step 8 baseline table, and two screenshots
-  (`06-5152-ws01-empty.png`, `06-sysmon3-zero.png`).
+  → recommendation), and **ten screenshots are filed in `assets/`**. A closeout sitting on
+  **2026-09-25** filled the Step 8 baseline table from command output on both VMs, so the only
+  thing outstanding is **two screenshots** (`06-5152-ws01-empty.png`, `06-sysmon3-zero.png`).
 
   **The module's thesis was wrong, and disproving it is the result.** It was built on "the
   text file is thin, event 5157 is rich." Three TCP knocks from WS01 to DC01 port 9999 —
@@ -348,11 +348,24 @@ Every lab (via the template) is laid out identically:
   destroyed by log rotation; the screenshot preserves both the typo and the correct retype.
   **Suspect the query before the host.**
 
-  **Left to finish:** six `Get-NetFirewallProfile` readbacks for the Step 8 baseline table, and
-  two screenshots — `06-5152-ws01-empty.png` (the 1040-count beside the empty `9999` filter)
-  and `06-sysmon3-zero.png`, which must be **re-derived rather than recreated**: the zero state
-  no longer exists, so the honest capture is three fresh knocks at the now-closed port leaving
-  the count unchanged at 1.
+  **The Step 8 baseline is complete as of 2026-09-25**, every cell read from command output on
+  one machine or the other rather than filled from memory. **The 2026-09-25 readbacks closed three open unknowns.** `LogBlocked` **survived the
+  2026-09-16 reboot** on both machines, each on its own active profile only (`Domain` for WS01,
+  `Public` for DC01) — it had been set on 2026-09-15 and never re-read, so this was genuinely
+  unknown. **DC01 is still on `Public`**, a third sighting and the first via
+  `Get-NetConnectionProfile` rather than the GUI, which rules out a reading artifact and leaves the
+  anomaly standing with no cause. And two new traps entered the gotchas list: **`Get-NetFirewallProfile`
+  reads the *configured* store by default**, returning `DefaultInboundAction: NotConfigured` — which
+  means "nothing explicitly set here", **not** "no default applies"; `-PolicyStore ActiveStore`
+  returned **Block inbound / Allow outbound** on both hosts, reconciling with the
+  `BlockInbound,AllowOutbound` already on record. And **`LogFileName` is stored as a literal
+  `%systemroot%\...`**, which PowerShell does not expand.
+
+  **Left to finish:** two screenshots — `06-5152-ws01-empty.png` (the 1040-count beside the empty
+  `9999` filter) and `06-sysmon3-zero.png`, which must be **re-derived rather than recreated**:
+  the zero state no longer exists, so the honest capture is three fresh knocks at the now-closed
+  port leaving the count unchanged at 1. **`06-sysmon3-zero.png` must be captured before Module
+  07 Step 3 edits the Sysmon config.**
 - 🟡 **Module 07 (Remote Desktop) written 2026-09-22, not yet run.** A two-VM sheet in which
   DC01 connects to WS01 and **the evidence lands almost entirely on the target** — the reverse of
   Module 06. The module's subject is **correlation**: one session is scattered across four logbooks

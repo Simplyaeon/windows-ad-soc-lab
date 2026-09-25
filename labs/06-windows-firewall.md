@@ -1198,22 +1198,36 @@ Fill this in from Step 1 and Step 2, one row per machine. **Cells marked `(unrea
 guesses to be filled from memory** — run the command and paste the answer, or leave the gap
 visible.
 
-**State as at 2026-09-16.** Every cell below is either a readback pasted during the run or a
-value visible in a filed screenshot; the provenance column says which.
+**State as at 2026-09-25.** Every cell below is either a readback pasted during the run or a
+value visible in a filed screenshot; the provenance column says which. Cells marked **†** were
+read on **2026-09-25**, in the sitting that closed this module out; the rest date from
+2026-09-16 or earlier and say so where it matters.
 
 | | WS01 | DC01 | Source |
 |---|---|---|---|
-| Active profile | **Domain** (`DomainAuthenticated`) | **Public** | `Get-NetConnectionProfile` / `06-firewall-profiles.png` |
-| Firewall enabled | (unread) | **On, all three profiles** | `06-firewall-profiles.png` |
-| Default inbound | (unread) | **Block** | `06-firewall-profiles.png` |
-| Default outbound | (unread) | **Allow** | `06-firewall-profiles.png` |
-| `Filtering Platform Connection` | **Failure** | **Failure** (sitting 2; not re-read 2026-09-16) | `auditpol` readback |
+| Active profile | **Domain** (`DomainAuthenticated`) **†** | **Public** **†** | `Get-NetConnectionProfile`, both hosts |
+| Firewall enabled | **On, all three profiles** **†** | **On, all three profiles** **†** | `Get-NetFirewallProfile`, both hosts |
+| Default inbound | **Block** **†** | **Block** **†** | `Get-NetFirewallProfile -PolicyStore ActiveStore` |
+| Default outbound | **Allow** **†** | **Allow** **†** | `Get-NetFirewallProfile -PolicyStore ActiveStore` |
+| `Filtering Platform Connection` | **Failure** | **Failure** (sitting 2; **still not re-read**) | `auditpol` readback |
 | `Filtering Platform Packet Drop` | **Failure** | **Failure** | `auditpol` readback, both hosts |
-| `MPSSVC Rule-Level Policy Change` | (unread this sitting) | **Success** | `auditpol` readback |
-| `LogBlocked` on active profile | (unread) | (unread) | — |
-| Text log path | (unread) | (unread) | — |
+| `MPSSVC Rule-Level Policy Change` | **Success** (2026-09-15; not re-read since) | **Success** **†** | `auditpol` readback |
+| `LogBlocked` on active profile | **True** — on `Domain` only **†** | **True** — on `Public` only **†** | `Get-NetFirewallProfile -PolicyStore ActiveStore` |
+| Text log path | `%systemroot%\system32\LogFiles\Firewall\pfirewall.log` **†** | `%systemroot%\system32\LogFiles\Firewall\pfirewall.log` **†** | `Select-Object -ExpandProperty LogFileName` |
 | Lab rules remaining | **none** | **none** — both lab rules deleted and confirmed by readback | `Get-NetFirewallRule` erroring |
 | Sysmon | v15.15, registry rules **+ `NetworkConnect` port 9999** | **not installed** | `Sysmon64.exe -c` readback |
+
+**Three things the 2026-09-25 readbacks established that were previously unknown:**
+
+1. **`LogBlocked` survived the 2026-09-16 reboot** on both machines. It was set on 2026-09-15
+   and never re-read, so this was an open unknown rather than a formality. Each host has it on
+   **only** its own active profile — `Domain` for WS01, `Public` for DC01 — which is why the
+   two machines' `True` sits in a different row of their own profile lists.
+2. **DC01 is still on `Public`** — a third sighting, this time via `Get-NetConnectionProfile`
+   rather than the GUI or a screenshot. A different instrument returning the same answer rules
+   out a reading artifact. **Still no cause established.**
+3. **Both machines store the text-log path with an unexpanded `%systemroot%`.** It is a literal
+   template, not a resolved path — see the gotcha below.
 
 **Pre-run baseline, for comparison** (2026-09-13 13:08, `06-auditpol-before.png`): all three
 subcategories `No Auditing`, `LogAllowedConnections` and `LogDroppedConnections` both
@@ -1716,6 +1730,25 @@ Candidates — confirm the IDs against attack.mitre.org before putting them in t
 ---
 
 ## Notes & gotchas
+
+- **`Get-NetFirewallProfile` reads the *configured* store by default, not the effective one.**
+  Without `-PolicyStore ActiveStore` it returned `DefaultInboundAction: NotConfigured` on both
+  machines (2026-09-25) — which does **not** mean "no default applies". It means nothing has
+  explicitly set that value in the store being read; Windows' built-in behaviour is still in
+  force. Re-read through `ActiveStore` and the same machines returned **Block inbound, Allow
+  outbound**, reconciling with the `Firewall Policy: BlockInbound,AllowOutbound` already on
+  record from 2026-09-13. Taken at face value, `NotConfigured` would have entered the baseline
+  as a wrong fact — the same family as the empty-`Get-WinEvent` traps: **a reading that looks
+  like an answer and is not one.**
+- **`LogFileName` is stored as a literal `%systemroot%\system32\LogFiles\Firewall\pfirewall.log`**
+  on both machines. PowerShell does **not** expand `%VAR%` syntax — `Get-Content` on that
+  literal string fails. Use `$env:systemroot`, or the expanded path. Module 06's own reads
+  never hit this because the file was opened by its expanded path.
+- **Read the table's columns before running its commands.** On 2026-09-25 the first three
+  readbacks were run on DC01 when it was **WS01's** cells that were marked `(unread)` — the
+  column order is WS01 first. No harm done (DC01's cells gained a command readback in place of
+  a screenshot) but it cost a round of commands. **The wrong-machine trap does not only apply
+  to queries; it applies to deciding which machine to query.**
 
 - **A mistyped event ID looks exactly like a genuine absence.** `Id=49466` instead of `4946`
   returns `No events were found that match the specified selection criteria` /
