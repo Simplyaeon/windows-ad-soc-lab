@@ -372,6 +372,66 @@ trusted by filename:**
    printed. Also verified: `ProfileChanged` reads `(null)` for a single-profile rule and `All`
    for `-Profile Any`.
 
+### Module 07 (Remote Desktop) — IN PROGRESS, sitting 1 complete
+
+Written 2026-09-22 (`labs/07-remote-desktop.md`). **Sitting 1 ran 2026-09-25 in two parts and is
+complete** — Steps 0–3. WS01 only so far. **Resume at Step 4, the break**, which is the sitting
+that produces the deliverable.
+
+**Lab state on WS01 after sitting 1 — all readback-verified:**
+
+- **Remote Desktop is ON.** `fDenyTSConnections` = **0** (double negative: zero means enabled).
+- **NLA is ON.** `UserAuthentication` = **1**. **This is Step 9.5's restore value** — Step 9 turns
+  NLA off deliberately and must put it back to `1`.
+- **`asmith` is in WS01's local `Remote Desktop Users`**, `PrincipalSource` = `ActiveDirectory`.
+- **Sysmon config now carries port 3389 alongside 9999** in the existing `NetworkConnect` include
+  group; `Configuration updated` returned and the live readback showed both ports **and** the
+  Module 03 registry rules intact. The registry rules must keep surviving — Modules 03 and 06
+  depend on them.
+- **WS01 is on `DomainAuthenticated`** (the Domain profile), read via `Get-NetConnectionProfile`.
+- Baselines from part 1, to compare against after the break: Security **4624 = 172**, Sysmon
+  **Event 3 = 1**, `LocalSessionManager` **725 records**, `RemoteConnectionManager` **0 records**.
+
+**Unconfirmed and carried as unknown, not done:** `sysmon-registry.xml.bak` (issued with the edit,
+never confirmed), `assets/07-sysmon-config.png` (asked for, not confirmed — recoverable, the
+config re-reads on demand), the schema version in the readback, and the **4732** expected from the
+group addition.
+
+**The result sitting 1 produced, and it killed one of the sheet's own predictions.** The run sheet
+said to watch for a **4946** when enabling RDP's firewall rules. There was **none**. There were
+**seven 4947s in a two-second burst at 09:39:25–09:39:26 UTC** — one programmatic action, not a
+person clicking. The Remote Desktop rules **already existed**, shipped disabled; enabling RDP
+flipped `Enabled` and Windows logged **modified**, not **added**.
+
+- **4946 = "a rule that was not there before now is." 4947 = "an existing rule changed."** A
+  firewall hunt written only for 4946 **misses a host being opened up to RDP entirely**. Candidate
+  for the module's Finding 5.
+- **Not established: seven 4947s for three rules.** `-DisplayGroup 'Remote Desktop'` returned
+  three (`Shadow (TCP-In)`, `User Mode (TCP-In)`, `User Mode (UDP-In)`, all `Enabled: True`, all
+  **`Profile: Any`**). No cause established; not chased.
+- **Three 4948s at 09:37:18, 09:48:02, 09:55:10 UTC are NOT this module's** — scattered, one
+  before the burst and two after. Module 06 saw unattended firewall rule-change noise on **DC01**;
+  this is the **first sighting on WS01**, and rules being deleted roughly every seven minutes with
+  nobody touching the machine has **no established cause**. The oldest row sat **on the query's
+  window boundary**, so the series may run further back than the query could see.
+
+**Two cmdlet traps added:**
+
+- **`Get-NetFirewallProfile` does not tell you which profile is active.** It lists all three, each
+  reading `Enabled: True`. **`Get-NetConnectionProfile`** gives the `NetworkCategory` actually in
+  use. This is the second way that cmdlet misleads — Module 06 found it reads the *configured*
+  store by default and returns `DefaultInboundAction: NotConfigured`.
+- **The shipped Remote Desktop rules are `Profile: Any`**, so the per-profile worry does not bite
+  for RDP itself on this host. It remains real for hand-written rules.
+
+**A screenshot arrived that was evidence for a different module.** A 2026-09-15 capture of the
+three `Test-NetConnection` knocks to `10.0.0.10:9999` — all `TcpTestSucceeded: False` with
+`PingSucceeded: True` at 1 ms — is **Module 06's ground truth** for Finding 2, showing a closed
+port on a live host rather than an unreachable host. **It identifies its own host from inside the
+frame** via `SourceAddress : 10.0.0.20`, which is stronger than the `PS C:\Users\Administrator>`
+prompt that left `06-auditpol-before.png` unattributable. **Not yet filed** — offered and not taken
+up.
+
 ## How to work on this
 
 **The user comes from Linux and is new to Windows and PowerShell.** Keep guides heavily

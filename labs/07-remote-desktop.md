@@ -4,7 +4,7 @@
 > where nearly all the evidence lands
 > **Time:** ~2 hours, best split across three sittings
 > **Roll back to:** `mod06-start` · **Snapshot before starting:** `mod07-start` (both VMs)
-> **Status:** written 2026-09-22. **Sitting 1 part-run 2026-09-25 — see the run log below.**
+> **Status:** written 2026-09-22. **Sitting 1 complete 2026-09-25 (two parts) — see the run log below.**
 > Everything marked **prediction** is an expectation to be tested, not a fact. Correct this file
 > from the run.
 
@@ -103,7 +103,7 @@ Sitting 2 is the one that produces the deliverable. Do not start it with twenty 
 
 ---
 
-# Run log — Sitting 1 (2026-09-25, part-run)
+# Run log — Sitting 1 (2026-09-25, complete)
 
 **Every value here was pasted back from the machine.** Anything not listed was not read, and is
 **unknown** rather than done.
@@ -143,17 +143,73 @@ comparing those two numbers says nothing about rotation. `oldestRecordNumber` is
 test. At 725 records across 59 days the channel runs at roughly **12 events a day** — no rotation
 pressure, which also lowers the urgency of the Step 6.6 export.
 
+### Part 2 — Steps 2.1 – 3.2 (same day, resumed)
+
+The sitting had stopped at Step 2.1 with Remote Desktop not yet enabled. It resumed there and ran
+to the end of Step 3.
+
+| Step | Reading | Value |
+|---|---|---|
+| 2.1 | Remote Desktop enabled via `SystemPropertiesRemote.exe`, NLA box left ticked | **applied** |
+| 2.2 | `fDenyTSConnections` (WS01) | **0** — RDP enabled |
+| 2.2 | `UserAuthentication` (WS01) | **1** — NLA required. **This is Step 9.5's restore value** |
+| 2.3 | `Get-NetConnectionProfile` (WS01) | `NetworkCategory` = **`DomainAuthenticated`** |
+| 2.3 | `Get-NetFirewallRule -DisplayGroup 'Remote Desktop'` | **3 rules, all `Enabled: True`, all Inbound, all `Profile: Any`** — `Shadow (TCP-In)`, `User Mode (TCP-In)`, `User Mode (UDP-In)` |
+| 2.3 | Rule-change events, 30-minute window | **7 × 4947**, **3 × 4948**, **0 × 4946** |
+| 3.1 | `Get-LocalGroupMember -Group 'Remote Desktop Users'` | **`asmith`**, `PrincipalSource` = **ActiveDirectory** |
+| 3.2 | `Sysmon64.exe -c sysmon-registry.xml` | **`Configuration updated`** |
+| 3.2 | Live config readback (`-c`, no filename) | **both ports (9999, 3389) and the registry rules present** — reported, not pasted |
+
+### What part 2 settled
+
+**Enabling Remote Desktop writes 4947, not 4946 — and this sheet predicted 4946.** Step 2.3 said
+to watch for a 4946 ("a rule was added"). The window contained **none**. What it contained was
+**seven 4947s inside a two-second burst at 09:39:25–09:39:26 UTC** — the signature of one
+programmatic action rather than a person clicking. The Remote Desktop rules **already existed** on
+WS01, shipped disabled; turning RDP on flipped their `Enabled` flag and Windows logged them as
+**modified**.
+
+**That sharpens what 4946 means for detection.** It is not "someone changed the firewall" — it is
+specifically **"a rule that was not there before now is"**. A hunt written only for 4946 would
+miss a machine being opened up to RDP entirely, because opening it up modifies rules that Windows
+already shipped. **This is a candidate for Finding 5**, which is reserved for whichever prediction
+the run kills.
+
+**Not established: why seven 4947s for three rules.** `-DisplayGroup 'Remote Desktop'` returned
+three rules; the burst holds seven events. More rules in the group than that filter returns, more
+than one 4947 per rule, or unrelated rules modified in the same instant are all consistent with
+the evidence. **No cause established**, and it was not chased.
+
+**The three 4948s are not this module's.** 09:37:18, 09:48:02 and 09:55:10 UTC — scattered, one
+*before* the toggle burst and two *after*, none aligned with it. Module 06 recorded firewall
+rule-change events appearing unattended on **DC01**; this is the first sighting of the same
+pattern on **WS01**, and something deleting firewall rules roughly every seven minutes with nobody
+touching the machine has **no established cause**. Recorded as an observation. Note also that the
+oldest row sat **on the query's window boundary**, so the series may extend further back than the
+query could see.
+
+**The firewall rules read `Profile: Any`, not `Domain`.** `Any` covers the Domain profile that
+WS01 is actually on, so nothing was blocked — but the recorded value is `Any`. Worth being exact:
+this module's own pre-flight predicted a per-profile check would matter, and on this host it did
+not, because the shipped rules are not profile-scoped at all.
+
 ### Where the sitting stopped
 
-**Step 2.1 was NOT done** — confirmed by the user at the end of the sitting. Remote Desktop was
-**not** enabled; `SystemPropertiesRemote.exe` was handed over but the dialog was never applied.
-So WS01 is still in its pre-module state as far as RDP is concerned, and the `mod07-start`
-snapshot remains an accurate baseline of the machine as it stands.
+**Sitting 1 is complete.** Steps 0 through 3 are done and every state change was confirmed by an
+independent readback rather than by the action appearing to succeed.
 
-**Resume here: Step 2.1.** Nothing needs re-reading first — every Step 0 and Step 1 value above
-was taken after the snapshot and none of them has been changed since.
+**Resume at Step 4 — the break.** That is the sitting that produces the deliverable; do not start
+it with twenty minutes left.
 
-**Not started:** Steps 2.1, 2.2, 2.3, 3.1, 3.2.
+**Unconfirmed, carried forward as unknown rather than done:**
+
+- **`C:\Tools\sysmon-registry.xml.bak`** — the backup copy was issued in the same message as the
+  edit and never confirmed. It may or may not exist.
+- **`assets/07-sysmon-config.png`** — the live-config screenshot was asked for and not confirmed
+  captured. The Sysmon config **can** be re-read at any time with `.\Sysmon64.exe -c`, so this is
+  recoverable, unlike Module 06's dropped one.
+- **Schema version** in the live readback was not reported back.
+- **The 4732** expected from the Step 3.1 group addition was not looked for.
 
 ### Carried over from Module 06
 
@@ -411,8 +467,15 @@ still true after a reboot. So confirm WS01's active profile for yourself rather 
 that sentence:
 
 ```powershell
-Get-NetFirewallProfile | Select-Object Name, Enabled
+Get-NetConnectionProfile | Select-Object Name, NetworkCategory
 ```
+
+> **Corrected 2026-09-25.** This step originally called `Get-NetFirewallProfile | Select Name,
+> Enabled`, which is the wrong instrument: it lists **all three** profiles and will show
+> `Enabled: True` for every one of them. That tells you a profile exists and is switched on — not
+> which one this machine's connection is using. `Get-NetConnectionProfile` answers the question
+> actually being asked. On the run, WS01 returned `NetworkCategory: DomainAuthenticated` — the
+> firewall's **Domain** profile.
 
 The inbound Remote Desktop rule must be **enabled on whichever profile WS01 is actually using**.
 If it is not:
@@ -424,9 +487,18 @@ Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
 Then **re-run the `Get-` above**. A `Enable-` that ran is not a rule that is enabled — the block
 rule reported deleted on 2026-09-15 was found still present and enabled the next sitting.
 
-> **Watch for a 4946 here.** Module 06 left `MPSSVC Rule-Level Policy Change` auditing **on**, so
-> enabling these rules should write rule-change events on WS01. Free corroboration, and a nice
-> confirmation that Module 06's switches are still live.
+> **Watch for rule-change events here.** Module 06 left `MPSSVC Rule-Level Policy Change` auditing
+> **on**, so this should write events on WS01 — free corroboration that those switches are still
+> live. Cast the net across **4946, 4947 and 4948** rather than one ID:
+>
+> ```powershell
+> Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4946,4947,4948; StartTime=(Get-Date).AddMinutes(-30)} | Select-Object TimeCreated, Id
+> ```
+>
+> **This sheet originally predicted a 4946 and was wrong.** The run produced **seven 4947s in a
+> two-second burst and no 4946 at all** — because the Remote Desktop rules already existed,
+> shipped disabled, so enabling RDP **modified** them rather than adding anything. **4946 means
+> specifically "a rule that was not there before now is."** See the sitting-1 run log.
 
 ---
 
@@ -1235,3 +1307,12 @@ wrong.** Write up which, and what the evidence actually said.
 - **Put `hostname` at the top of every screenshot.**
 - **Suspect the query before the host.** A mistyped event ID returns `NoMatchingEventsFound` —
   the identical message a genuine empty result gives.
+- **4946 is "rule added", 4947 is "rule modified" — enabling a shipped-but-disabled rule is a
+  4947.** Verified on WS01 2026-09-25: turning RDP on produced 7 × 4947 and **zero** 4946. A
+  firewall hunt written only for 4946 misses a host being opened up to RDP.
+- **`Get-NetFirewallProfile` does not tell you which profile is active.** It lists all three, each
+  reading `Enabled: True`. `Get-NetConnectionProfile` gives the `NetworkCategory` actually in use.
+  Module 06 already found this cmdlet misleading in a second way — it reads the *configured* store
+  by default and returns `DefaultInboundAction: NotConfigured`.
+- **The shipped Remote Desktop rules are `Profile: Any`.** So the per-profile worry this sheet
+  raises does not bite for RDP itself on this host — but it is still real for rules you write.
