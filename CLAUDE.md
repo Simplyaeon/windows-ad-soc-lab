@@ -322,12 +322,17 @@ would discriminate and has **not** been run.
   **deliberately skipped by the user**; cause unknown. Eval-licence expiry is the known prior
   (2026-09-04), not a verified cause here.
 
-**What is left to finish Module 06 — two screenshots.** The six `Get-NetFirewallProfile`
+**`06-sysmon3-zero.png` was deliberately not captured** — a decision by the user on
+2026-09-25, to avoid holding up Module 07. Module 07 Step 3.2 then added port 3389 to the Sysmon
+config, so the re-derivation described above is **no longer available** and the screenshot is
+**permanently outstanding**. The underlying result is unaffected: Finding 2 rests on the
+2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
+Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
+change. The missing item is the illustration, not the evidence.
+
+**What is left to finish Module 06 — one screenshot, `06-5152-ws01-empty.png`.** The six `Get-NetFirewallProfile`
 readbacks were taken on **2026-09-25** and the Step 8 table is now fully populated from command
-output on both VMs. Remaining: `06-5152-ws01-empty.png`, and `06-sysmon3-zero.png` which must be
-**re-derived** (three fresh knocks at the now-closed port leaving the count unchanged at 1)
-because the zero state no longer exists — **and which must be captured before Module 07 Step 3
-edits the Sysmon config.**
+output on both VMs. Remaining: `06-5152-ws01-empty.png` only.
 
 **The 2026-09-25 readbacks closed three open unknowns.** `LogBlocked` **survived the
 2026-09-16 reboot** on both machines, each on its own active profile only (`Domain` for WS01,
@@ -480,9 +485,17 @@ commands creating them had never been run.
 - 4771 has **no Logon Type** — "Type: 2" there is Pre-Authentication Type
   (`PA-ENC-TIMESTAMP`). Interactive-vs-network evidence comes from 4625 on WS01.
 - Empty output is not an error. Check in order: wrong machine → window too narrow or
-  starved → **events overwritten** (`wevtutil gli <log>`, and compare `FileSize` to
-  `MaximumSizeInBytes` — if the log has never filled, the oldest event is the machine's
-  true beginning, not a rotation boundary) → channel disabled → auditing actually off.
+  starved → **events overwritten** → channel disabled → auditing actually off.
+- **To judge rotation, read `oldestRecordNumber` from `wevtutil gli <log>` — NOT `FileSize`
+  against `MaximumSizeInBytes`.** Verified on WS01 2026-09-25:
+  `Microsoft-Windows-TerminalServices-LocalSessionManager/Operational` reported `FileSize`
+  **exactly equal** to `MaximumSizeInBytes` (1,052,672) while holding only 725 records and an
+  `oldestRecordNumber` of **1** — i.e. nothing had ever been discarded. **An event log file is
+  allocated at its configured size regardless of how full it is**, so the two numbers matching
+  means nothing about rotation. `oldestRecordNumber` = 1 is the reliable proof a log has never
+  wrapped; anything higher is the count already lost. This corrects the earlier guidance here,
+  which read the size comparison as diagnostic and produced a confident wrong call about a log
+  rotating when it never had.
 
 ## Module and findings conventions
 

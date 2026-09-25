@@ -4,8 +4,9 @@
 > where nearly all the evidence lands
 > **Time:** ~2 hours, best split across three sittings
 > **Roll back to:** `mod06-start` · **Snapshot before starting:** `mod07-start` (both VMs)
-> **Status:** written 2026-09-22, **not yet run**. Everything below marked **prediction** is
-> an expectation to be tested, not a fact. Correct this file from the run.
+> **Status:** written 2026-09-22. **Sitting 1 part-run 2026-09-25 — see the run log below.**
+> Everything marked **prediction** is an expectation to be tested, not a fact. Correct this file
+> from the run.
 
 ---
 
@@ -102,39 +103,80 @@ Sitting 2 is the one that produces the deliverable. Do not start it with twenty 
 
 ---
 
+# Run log — Sitting 1 (2026-09-25, part-run)
+
+**Every value here was pasted back from the machine.** Anything not listed was not read, and is
+**unknown** rather than done.
+
+### Completed and verified
+
+| Step | Reading | Value |
+|---|---|---|
+| 0.1 | `Test-ComputerSecureChannel` (WS01) | **True** |
+| 0.2 | `Get-ADUser asmith` (DC01) | **exists** |
+| 0.3 | Lockout threshold / observation window (DC01) | **5** / **10 minutes** — matches Module 01 |
+| 0.4 | `mod07-start` snapshots | **taken on both VMs**, clean shutdown, both restarted |
+| 1.1 | `auditpol` `Logon` (WS01) | **Success and Failure** |
+| 1.1 | `auditpol` `Logoff` (WS01) | **Success and Failure** |
+| 1.2 | LocalSessionManager/Operational (WS01) | **`IsEnabled: True`**, `LogMode: Circular`, **725 records**, `FileSize` = `MaximumSizeInBytes` = **1,052,672** |
+| 1.2 | … oldest event | **2026-07-28**, `oldestRecordNumber` **1** |
+| 1.2 | RemoteConnectionManager/Operational (WS01) | **`IsEnabled: True`**, **`RecordCount: 0`** |
+| 1.3 | Security 4624 count (WS01) | **172** |
+| 1.3 | Sysmon Event 3 count (WS01) | **1** |
+
+### What these settled
+
+**Both Remote Desktop channels are enabled by default on this build.** That was an open
+prediction in this sheet and it is now closed — no gate to open, for either channel.
+
+**`RemoteConnectionManager` holds zero records**, which is the strongest possible baseline: the
+channel works and has never recorded anything, so every event appearing in it after Step 4 is
+unambiguously this module's. RDP has genuinely never been used on WS01.
+
+**`LocalSessionManager` has never rotated**, and the way that was established corrected a piece of
+guidance in CLAUDE.md. `FileSize` read **exactly equal** to `MaximumSizeInBytes`, which was first
+called as "the log is full and overwriting" — wrong. `oldestRecordNumber` came back **1**, meaning
+nothing has ever been discarded, and the 2026-07-28 oldest event is WS01's true beginning rather
+than a rotation boundary (the same date as the Security log's oldest event, recorded in Module
+04). **An event log file is allocated at its configured size regardless of how full it is**, so
+comparing those two numbers says nothing about rotation. `oldestRecordNumber` is the reliable
+test. At 725 records across 59 days the channel runs at roughly **12 events a day** — no rotation
+pressure, which also lowers the urgency of the Step 6.6 export.
+
+### Where the sitting stopped
+
+**Step 2.1 was issued but not confirmed.** `SystemPropertiesRemote.exe` was handed over with
+instructions to enable Remote Desktop and leave NLA ticked; **no confirmation was pasted back**,
+so the state of that dialog is **unknown**. Resume by running the Step 2.2 registry readback
+first — it reports what is actually set, whichever way the dialog went.
+
+**Not started:** Steps 2.2, 2.3, 3.1, 3.2.
+
+### Carried over from Module 06
+
+`06-sysmon3-zero.png` was **deliberately dropped** on 2026-09-25 rather than captured before the
+Step 3.2 config change. `06-5152-ws01-empty.png` is still capturable at any time and remains
+outstanding.
+
+---
+
 # Step 0 — Pre-flight (both VMs)
 
 ### 0.0 Close out Module 06 first — and mind the order
 
 **Aim: finish the previous module while its lab state still exists, because this one changes it.**
 
-Module 06 has three clerical items left, and one of them **stops being possible** once you edit
-Sysmon's config in Step 3:
+Module 06 has two clerical items left — the six `Get-NetFirewallProfile` readbacks were taken on
+2026-09-25 and its Step 8 table is now fully populated. One of the two **stops being possible**
+once you edit Sysmon's config in Step 3:
 
-1. The six `Get-NetFirewallProfile` readbacks for its Step 8 baseline table
-2. `06-5152-ws01-empty.png`
-3. `06-sysmon3-zero.png` — **do this one before touching Sysmon.** Fire three knocks at the
+1. `06-5152-ws01-empty.png`
+2. `06-sysmon3-zero.png` — **do this one before touching Sysmon.** Fire three knocks at the
    now-closed port 9999 from WS01 and capture the Event 3 count staying at **1**. The original
    zero state no longer exists, so this is a re-derivation, not a recreation, and the honest
    capture is the count *not moving*.
 
-### 0.1 Check both machines are healthy
-
-**Aim: start from machines that will not shut down mid-sitting.**
-
-DC01 shut down unexpectedly mid-sitting on 2026-09-16 and the cause was never established.
-Eval-licence expiry is the known prior from 2026-09-04, not a verified cause of that event.
-
-On **DC01**, right-click **Start → Windows PowerShell (Admin)**:
-
-```powershell
-slmgr /dlv
-```
-
-A dialog appears. Check the remaining time is not near zero. Repeat on **WS01** — its
-Windows 11 evaluation was always going to hit the same wall eventually.
-
-### 0.2 Boot DC01 first and prove the domain is up
+### 0.1 Boot DC01 first and prove the domain is up
 
 **Aim: prove the domain works before you touch anything, so anything odd later is something
 you did.**
@@ -152,7 +194,7 @@ You want **`True`**.
 > **A successful login is not proof the domain is up.** Windows signs you in from **cached
 > credentials** with no network at all. On 2026-09-13 this cost most of a sitting.
 
-### 0.3 Check the account you are going to use still exists
+### 0.2 Check the account you are going to use still exists
 
 **Aim: don't discover in Step 4 that your test account was cleaned up two modules ago.**
 
@@ -170,7 +212,7 @@ $pw = ConvertTo-SecureString "Lab-Passw0rd!" -AsPlainText -Force
 New-ADUser -Name "asmith" -SamAccountName "asmith" -UserPrincipalName "asmith@corp.local" -Path "CN=Users,DC=corp,DC=local" -AccountPassword $pw -Enabled $true
 ```
 
-### 0.4 Read the lockout policy — this one will bite you
+### 0.3 Read the lockout policy — this one will bite you
 
 **Aim: know how many wrong passwords you can afford before the account locks and changes the
 evidence underneath you.**
@@ -195,7 +237,7 @@ through.
 > **4625**, distinguished by the failure-reason / status field inside the event, not by the
 > event ID. Read the field; do not infer from the ID.
 
-### 0.5 Snapshot both VMs
+### 0.4 Snapshot both VMs
 
 **Aim: make Step 9's NLA experiment repeatable, and give the lab the clean baseline Module 03
 still lacks.**
@@ -527,7 +569,7 @@ Click **Connect**. When prompted for credentials, use:
 asmith@corp.local
 ```
 
-with the password `Lab-Passw0rd!` (or whatever you set in Step 0.3).
+with the password `Lab-Passw0rd!` (or whatever you set in Step 0.2).
 
 **Type it carefully.** A mistyped password here is a wrong-password attempt against an account
 with a five-attempt lockout threshold, and it will contaminate Step 8.

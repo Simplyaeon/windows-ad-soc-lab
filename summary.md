@@ -361,11 +361,14 @@ Every lab (via the template) is laid out identically:
   `BlockInbound,AllowOutbound` already on record. And **`LogFileName` is stored as a literal
   `%systemroot%\...`**, which PowerShell does not expand.
 
-  **Left to finish:** two screenshots — `06-5152-ws01-empty.png` (the 1040-count beside the empty
-  `9999` filter) and `06-sysmon3-zero.png`, which must be **re-derived rather than recreated**:
-  the zero state no longer exists, so the honest capture is three fresh knocks at the now-closed
-  port leaving the count unchanged at 1. **`06-sysmon3-zero.png` must be captured before Module
-  07 Step 3 edits the Sysmon config.**
+  **Left to finish:** one screenshot — `06-5152-ws01-empty.png` (the 1040-count beside the empty
+  `9999` filter). **`06-sysmon3-zero.png` was deliberately not captured** — a decision by the user on
+  2026-09-25, to avoid holding up Module 07. Module 07 Step 3.2 then added port 3389 to the Sysmon
+  config, so the re-derivation described above is **no longer available** and the screenshot is
+  **permanently outstanding**. The underlying result is unaffected: Finding 2 rests on the
+  2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
+  Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
+  change. The missing item is the illustration, not the evidence.
 - 🟡 **Module 07 (Remote Desktop) written 2026-09-22, not yet run.** A two-VM sheet in which
   DC01 connects to WS01 and **the evidence lands almost entirely on the target** — the reverse of
   Module 06. The module's subject is **correlation**: one session is scattered across four logbooks
