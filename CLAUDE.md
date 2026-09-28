@@ -37,7 +37,8 @@ rather than trying to inspect anything directly.
 
 **Read `summary.md` first** — it carries the current status, the per-module findings, and
 the next steps, and is the file to update as modules complete. Modules 00–05 are complete
-with findings written and evidence in `assets/`; `main` is pushed through **Module 03**.
+with findings written and evidence in `assets/`; `main` is pushed through **Module 06** —
+check `git log origin/main..main` rather than trusting this line.
 **Module 06 is NEARLY COMPLETE** (written 2026-09-13; four sittings 2026-09-13 → 2026-09-16,
 plus a closeout sitting 2026-09-25; lab work done, all five findings written, ten screenshots
 filed, **Step 8 baseline table now fully read on both VMs** — only **two screenshots**
@@ -372,11 +373,10 @@ trusted by filename:**
    printed. Also verified: `ProfileChanged` reads `(null)` for a single-profile rule and `All`
    for `-Profile Any`.
 
-### Module 07 (Remote Desktop) — IN PROGRESS, sitting 1 complete
+### Module 07 (Remote Desktop) — IN PROGRESS, sittings 1–2 complete
 
 Written 2026-09-22 (`labs/07-remote-desktop.md`). **Sitting 1 ran 2026-09-25 in two parts and is
-complete** — Steps 0–3. WS01 only so far. **Resume at Step 4, the break**, which is the sitting
-that produces the deliverable.
+complete** — Steps 0–3. WS01 only so far.
 
 **Lab state on WS01 after sitting 1 — all readback-verified:**
 
@@ -394,8 +394,8 @@ that produces the deliverable.
 
 **Unconfirmed and carried as unknown, not done:** `sysmon-registry.xml.bak` (issued with the edit,
 never confirmed), `assets/07-sysmon-config.png` (asked for, not confirmed — recoverable, the
-config re-reads on demand), the schema version in the readback, and the **4732** expected from the
-group addition.
+config re-reads on demand) and the schema version in the readback. **The 4732 is now found** — see
+sitting 2 below.
 
 **The result sitting 1 produced, and it killed one of the sheet's own predictions.** The run sheet
 said to watch for a **4946** when enabling RDP's firewall rules. There was **none**. There were
@@ -431,6 +431,110 @@ port on a live host rather than an unreachable host. **It identifies its own hos
 frame** via `SourceAddress : 10.0.0.20`, which is stronger than the `PS C:\Users\Administrator>`
 prompt that left `06-auditpol-before.png` unattributable. **Not yet filed** — offered and not taken
 up.
+
+**Sitting 2 ran 2026-09-28 — Steps 4–7 complete, WS01.** Two RDP sessions made from DC01, found in
+all four logs and joined. **Resume at Step 8**; Steps 8–11 are the last sitting on the VMs, and the
+Findings section after them is desk work. **Step 9 must end with `UserAuthentication` back to `1`,
+readback-verified.** `asmith`'s five-attempt lockout threshold is live through Steps 8 and 9 —
+`Unlock-ADAccount -Identity asmith` on DC01 is the recovery.
+
+**The module's result, and the Security log does not survive it well.** One RDP attachment writes
+**three 4624s**: two **Type 3** network logons with subject Logon ID `0x0` (NLA checking
+credentials before a session exists), then the **Type 10**, subject `0x3E7` (SYSTEM). So counting
+Type 10s over-counts sessions by one per reconnect, and counting a user's 4624s over-counts by
+three. The interactive session was **`0x4F246D`, 4624 at 09:30:26 → 4647 at 09:42:20 UTC**, carried
+by **479 events** including **154 × 4688** — a genuine pivot from "who logged on" to "what the
+session did". **Not one of those 479 events marks the 3m30s the user was detached** (09:37:33 →
+09:41:03).
+
+**The newest matching event is not the right event.** `-First 1` on the `asmith` 4624s returned
+`0x741EE0` — Type 10, source `10.0.0.10`, indistinguishable from the session — which got a **4634
+nine seconds later** and had ended before the user was back at the desktop. Read the whole set
+before picking one.
+
+**Unplanned controlled experiment, and the sitting's strongest finding.**
+`auditpol /get /subcategory:"Other Logon/Logoff Events"` returned **`No Auditing`** — a **third**
+switch, distinct from the `Logon` and `Logoff` subcategories verified in sitting 1. So the missing
+4778/4779 were the instrument, not Windows. Enabled with `/success:enable`, readback confirmed,
+boundary marked at 12:55:18 UTC, identical activity repeated → **four events where there had been
+none**, and **nothing before the boundary**. Auditing is not retroactive; the morning disconnect is
+permanently unrecoverable. **4778/4779 are not RDP events** — they track *any* window-station
+attach/detach, `Session Name` separating `Console` from `RDP-Tcp#N`. The extra pair is
+**Administrator's console session being displaced** when `asmith` connected, which is what an RDP
+logon onto an occupied machine looks like from both sides.
+
+**`Other Logon/Logoff Events` = Success is now lab state on WS01. Leave it on** — Module 06
+precedent, and it is the only instrument that caught the console displacement.
+
+**LocalSessionManager is the log that tells the story**, in two lines where the Security log needed
+479 events to miss it: `21` logon, `24` **disconnected**, `25` **reconnected**, `23` logoff. Both
+sessions recovered in full with per-event attribution.
+
+**Verified during the run — only what the user pasted back:**
+
+| Fact | Evidence |
+|---|---|
+| **Fields live at `.Event.UserData.EventXML`** as named elements (`User`, `SessionID`, `Address`) | `EventData.Data` returned **nothing**, as the sheet predicted. A **third** shape, distinct from `EventData.Data`-with-`Name` and from 1102's `UserData.LogFileCleared` |
+| **`Address` separates remote from local in one field** | `LOCAL` for Administrator's console sessions, `10.0.0.10` for `asmith`'s RDP. The Security log needs Type 10 *plus* a source address to say as much |
+| **This channel logs local logons too** | Administrator console 21/22 at 09:50:21, 11:30:33, 13:40:17. A hunt on ID 21 alone is not an RDP hunt |
+| **SessionIDs are reused and unordered** | morning session **3**, afternoon session **2** — same user, same machine, same day, later session with the *lower* number. Identifies a session only within a time window |
+| **The `23` carries no `Address`** | a hunt reading only session endings loses the source IP |
+| 1149 names **`asmith@corp.local`** and source `10.0.0.10` | RemoteConnectionManager held **0 records** at baseline, so everything in it is this module's |
+| **5 × 1149 for two sessions** | credentials accepted more than once per session. **No cause established.** 258/261/263/1136/20523/20524 in that channel were **never resolved on the box** |
+| **Sysmon Event 3 logs the inbound half** — closes Module 06's open question | total **11** against a baseline of **1**; `Initiated: false`, `SourceHostname DC01`, `DestinationPort 3389` / `ms-wbt-server` |
+| **…but it attributes a machine, never a person** | `Image: svchost.exe`, `User: NT AUTHORITY\NETWORK SERVICE`. `asmith` appears nowhere. Module 06's outbound event named `powershell.exe` and the real user — the receiving end cannot |
+| **Sysmon prints `UtcTime` explicitly** | the only instrument here that does; every Windows channel displays local and stores UTC |
+| **4732 from the Step 3.1 group addition exists** | one event, 2026-09-25 10:14:46 UTC. Closes a sitting-1 unknown |
+
+**No single field spans the four logs, and one identity has four spellings** — `asmith` + `CORP`
+(4624), `asmith@corp.local` (1149), `CORP\asmith` (LocalSessionManager), `NT AUTHORITY\NETWORK
+SERVICE` (Sysmon). **No two match as strings**, so one hunt string cannot search all four — the
+same shape as Module 03's `\REGISTRY\MACHINE\` vs `HKLM\`. The join is made in **hops**: Logon ID
+ties the Security log to itself, SessionID ties the session log to itself, **nothing carries
+both**, so the bridge is user + source address + a ~1 s timestamp coincidence. **Two sessions from
+one user within a minute would be separable only by timestamp** — a real limit, stated as one.
+
+**Each log answers exactly one question:** Sysmon *where from* (machine), 1149 *who*,
+LocalSessionManager *what happened to the session*, Security *what the session did*.
+
+**Traps this sitting added:**
+
+- **The wrong-*channel* trap, which nearly produced a false finding.** `Id=24,25` against
+  **RemoteConnectionManager** returns `NoMatchingEventsFound` — identical to a genuine absence, no
+  error. It briefly looked like this build does not record RDP disconnects at all. The two channels
+  divide the work: **RemoteConnectionManager is the connection, LocalSessionManager is the
+  session.** Same family as the wrong-machine trap already on record.
+- **`Select-String` emits match objects, not text.** Piping a DateTime and MatchInfo together
+  makes PowerShell fall back to list view and bury the answer under `IgnoreCase`/`LineNumber`/
+  `Path`. Use `.Line` (or `.Line.Trim()`) to get the matched text.
+- **4624 carries two `Account Name` and two `Logon ID` fields.** **Subject** is who requested the
+  logon (usually the machine account, `0x3E7` = SYSTEM); **New Logon** is the account logged on.
+  Hunting the first one returns the machine account on every event.
+- **`4647` ≠ `4634`.** The interactive session ended with **4647** ("user initiated logoff"); the
+  transient one got **4634** ("session was terminated"). A hunt for 4634 alone misses the
+  deliberate sign-out.
+
+**Unexplained, recorded as observations, no cause established:**
+
+1. **4624 queries with a 4-hour window returned nothing** although the events sat well inside it.
+   Rotation, message rendering and window boundary were each tested and excluded. Likeliest
+   candidate is that a `-MaxEvents 50` variant was the one that actually ran — **not established**.
+2. **Noted times and logged times disagree by up to a minute, in both directions.** Morning
+   disconnect: log 09:37:33, noted 09:38:35. Afternoon: log 12:59:49, noted **12:59:04** — the note
+   *precedes* the event, which switching windows to type a timestamp cannot explain. Possible clock
+   skew between DC01 and WS01. **Not measured.**
+3. **479 Security events from one twelve-minute session**, against Module 04's ~0.26 MB/day
+   measured in August. Consistent with Module 06's parked 308-per-20-minutes observation. Still
+   **not measured properly** — no window controlled for a reboot.
+
+**Evidence: two `.evtx` exports on WS01** — `C:\evidence\07-security.evtx` and
+`C:\evidence\07-lsm.evtx`, taken 2026-09-28 before anything could roll. Not in the repo.
+
+**Six screenshots exist on the Windows machine and none are in `assets/`** — pasting into a chat
+does not put them on disk. From sitting 1: `07-sysmon-config.png`, `07-4947-rules-modified.png`.
+From sitting 2: `07-1149-auth.png`, `07-session-lifecycle.png`, **`07-session-attribution.png`**
+(the User/SessionID/Address table — the cleanest single image this module has produced), and the
+`Group-Object` breakdown of the 479 events.
 
 ## How to work on this
 
@@ -544,7 +648,23 @@ commands creating them had never been run.
   reads work on any machine, not just the source host.
 - 4771 has **no Logon Type** — "Type: 2" there is Pre-Authentication Type
   (`PA-ENC-TIMESTAMP`). Interactive-vs-network evidence comes from 4625 on WS01.
-- Empty output is not an error. Check in order: wrong machine → window too narrow or
+- **Wrong *channel* is as silent as wrong machine.** `Id=24,25` against
+  **TerminalServices-RemoteConnectionManager** returns `NoMatchingEventsFound`; those IDs live in
+  **LocalSessionManager**. No error, and the message is identical to a genuine absence. Verified
+  2026-09-28 — it nearly produced a finding that Windows does not log RDP disconnects. Add
+  "wrong channel" to the empty-output checklist below, next to "wrong machine".
+- **`Select-String` returns match objects, not text.** Piping a DateTime and MatchInfo into one
+  stream makes PowerShell fall back to list view and bury the value under `IgnoreCase`,
+  `LineNumber`, `Path`, `Pattern`. Use `.Line` or `.Line.Trim()`.
+- **If `EventData.Data` is empty, check `UserData` — and then go one level deeper.** The
+  TerminalServices channels store fields at **`.Event.UserData.EventXML`** as named elements
+  (`User`, `SessionID`, `Address`), not as `Data` entries with a `Name` attribute. `.Event.UserData`
+  alone prints only the wrapper. A **third** field shape, after `EventData.Data` and 1102's
+  `UserData.LogFileCleared`.
+- **The newest matching event is not the right event.** `-First 1` on `asmith`'s 4624s returned a
+  Type 10 logon from the correct source address that was a **nine-second** transient, not the
+  interactive session. Read the whole set, then pick.
+- Empty output is not an error. Check in order: wrong machine → **wrong channel** → window too narrow or
   starved → **events overwritten** → channel disabled → auditing actually off.
 - **To judge rotation, read `oldestRecordNumber` from `wevtutil gli <log>` — NOT `FileSize`
   against `MaximumSizeInBytes`.** Verified on WS01 2026-09-25:

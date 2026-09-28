@@ -36,7 +36,7 @@ starts from).
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
 | `labs/06-windows-firewall.md` | **Module 06, nearly complete** — written 2026-09-13, four sittings 2026-09-13 → 2026-09-16, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
-| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, sitting 1 complete 2026-09-25** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. Includes the NLA controlled experiment and reserves Finding 5 for whichever prediction the run kills — **one is already dead: enabling RDP writes 4947, not the 4946 the sheet predicted** |
+| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, Steps 0–7 complete 2026-09-28** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. Includes the NLA controlled experiment and reserves Finding 5 for whichever prediction the run kills — **one is already dead: enabling RDP writes 4947, not the 4946 the sheet predicted** |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -61,7 +61,7 @@ starts from).
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — 3 sittings run, not finished |
-| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/25, **4947** | 🟡 In progress — sitting 1 (Steps 0–3) complete, resume at Step 4 |
+| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947** | 🟡 In progress — Steps 0–7 complete, resume at Step 8 |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
@@ -369,73 +369,68 @@ Every lab (via the template) is laid out identically:
   2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
   Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
   change. The missing item is the illustration, not the evidence.
-- 🟡 **Module 07 (Remote Desktop) — sitting 1 complete 2026-09-25.** Written 2026-09-22. A two-VM sheet in which
-  DC01 connects to WS01 and **the evidence lands almost entirely on the target** — the reverse of
-  Module 06. The module's subject is **correlation**: one session is scattered across four logbooks
-  (Security **4624 Type 10**/4625, RemoteConnectionManager **1149**, LocalSessionManager
-  **21/22/23/24/25**, Sysmon Event 3), and the deliverable is the join — naming the field that
-  proves two entries are the *same* session, and saying plainly if no single field spans all four.
-  The session is made deliberately messy — log on, **disconnect**, reconnect, log off — because
-  **disconnecting is not logging off**: the 24/25 pair is Windows recording a session abandoned and
-  left running, the precondition for RDP hijacking (T1563.002).
+- 🟡 **Module 07 (Remote Desktop) — sittings 1 and 2 complete, Steps 0–7 done (2026-09-28).** Two RDP
+  sessions made from DC01 to WS01, reconstructed across all four logbooks and joined, with the
+  access story and its MITRE mapping written (T1021.001, T1078).
 
-  **Sitting 1 (Steps 0–3) ran 2026-09-25 in two parts and is complete.** Part 1 baselined the four
-  logbooks — Security **4624 = 172**, Sysmon **Event 3 = 1**, `LocalSessionManager` **725 records**
-  back to 2026-07-28, `RemoteConnectionManager` **0**. Both Remote Desktop channels are **enabled
-  by default** on this build, and the zero-record `RemoteConnectionManager` is the strongest
-  possible baseline: RDP has genuinely never been used on WS01, so anything appearing there after
-  the break is unambiguously this module's. Part 2 built the capability, every change confirmed by
-  an independent readback: `fDenyTSConnections` = **0** (RDP on), `UserAuthentication` = **1** (NLA
-  on — Step 9.5's restore value), `asmith` in WS01's local `Remote Desktop Users` with
-  `PrincipalSource: ActiveDirectory`, and Sysmon's `NetworkConnect` group extended to **port 3389**
-  beside 9999, with the Module 03 registry rules confirmed intact in the live readback.
+  **The Security log cannot tell this story on its own, and that is the module's result.** One RDP
+  attachment writes **three 4624s** — two **Type 3** NLA credential checks with subject Logon ID
+  `0x0`, then the **Type 10** with SYSTEM (`0x3E7`) as subject — so counting Type 10s over-counts
+  sessions by one per reconnect. The interactive session was **`0x4F246D`, 09:30:26 → 09:42:20
+  UTC**, carried by **479 events** including **154 × 4688**, which is the pivot from "who logged
+  on" to "what the session did". **None of those 479 events marks the 3m30s the user was detached**
+  (09:37:33 → 09:41:03). **LocalSessionManager says it in two lines** — `24` disconnected, `25`
+  reconnected — with `User`, `SessionID` and `Address` on every row.
 
-  **One of the sheet's own predictions is already dead, and it is the better result of the two.**
-  Step 2.3 said to watch for a **4946** when RDP's firewall rules came on. There was none — there
-  were **seven 4947s in a two-second burst at 09:39:25–09:39:26 UTC**. The Remote Desktop rules
-  **already existed**, shipped disabled, so enabling RDP **modified** them rather than adding
-  anything. **4946 means specifically "a rule that was not there before now is"; 4947 means an
-  existing rule changed** — so a firewall hunt written only for 4946 misses a host being opened up
-  to RDP entirely. Candidate for **Finding 5**, which the sheet reserves for exactly this. Two
-  things remain unexplained and are recorded as observations, not findings: **why seven 4947s for
-  three rules**, and **three 4948s at 09:37:18 / 09:48:02 / 09:55:10 UTC that are not this
-  module's** — the first sighting on WS01 of the unattended firewall rule-change noise Module 06
-  found on DC01. Also corrected in the sheet: **`Get-NetFirewallProfile` does not say which profile
-  is active** (it lists all three as `Enabled: True`); `Get-NetConnectionProfile` does, and WS01
-  returned `DomainAuthenticated`.
+  **An unplanned controlled experiment produced the strongest finding.**
+  `auditpol /get /subcategory:"Other Logon/Logoff Events"` read **`No Auditing`** — a **third**
+  switch, distinct from the `Logon` and `Logoff` subcategories verified in sitting 1 — so the
+  missing 4778/4779 were the instrument, not Windows. Enabled, readback confirmed, boundary marked,
+  identical activity repeated: **four events where there had been none, and nothing before the
+  boundary.** Auditing is not retroactive, so the morning disconnect is permanently unrecoverable.
+  **4778/4779 are not RDP events** — they track any window-station attach/detach, and the extra
+  pair is **Administrator's console session being displaced** when `asmith` connected. That switch
+  is now lab state on WS01 and should be **left on**.
 
-  **Closed after the sitting:** `sysmon-registry.xml.bak` exists, the live-config screenshot was
-  captured, and the schema version reads **4.90**. **Still open, written into the run sheet as a
-  start-of-next-session checklist:** move `07-sysmon-config.png` and `07-4947-rules-modified.png`
-  onto the Mac and into `assets/` — they exist on the Windows machine but not in the repo, and the
-  second is the only image evidence behind this sitting's result — and find the **4732** from the
-  group addition. **Resume at Step 4 — the break**, which is the sitting that produces the
-  deliverable.
+  **No single field spans the four logs, and one identity has four spellings**: `asmith` + `CORP`
+  (4624), `asmith@corp.local` (1149), `CORP\asmith` (LocalSessionManager), `NT AUTHORITY\NETWORK
+  SERVICE` (Sysmon Event 3). The join is made in **hops** — Logon ID inside the Security log,
+  SessionID inside the session log, nothing carrying both — so the bridge is user + source address
+  + a ~1 s timestamp coincidence. **Two sessions from one user within a minute would be separable
+  only by timestamp.** Each log answers exactly one question: Sysmon *where from* (a machine, never
+  a person — `svchost.exe` / `NETWORK SERVICE`), 1149 *who*, LocalSessionManager *what happened to
+  the session*, Security *what the session did*.
 
-  **The module carries Module 06's result forward as a falsifiable hypothesis**, not as an
-  assumption: that the instruments go quiet exactly when the attempt does *not* succeed, with **NLA**
-  as the mechanism. Step 9 tests it by failing the identical logon twice, NLA on then off — one
-  variable. Either outcome is a result, and **Finding 5 is reserved in advance** for whichever of the
-  sheet's predictions the run kills, in the spirit of Module 06's Finding 5.
+  **Module 06's open question is closed:** Sysmon Event 3 **does** log the inbound half —
+  total **11** against a baseline of **1**, `Initiated: false`, `SourceHostname DC01`, port 3389.
 
-  **Predictions are marked as predictions throughout**, because none of them could be checked from
-  the authoring machine: the NLA hypothesis itself; **Logon Type 3 rather than 10** on a failed RDP
-  logon (which would silently break any detection rule written only for Type 10); `UserData` rather
-  than `EventData` for the TerminalServices events (the trap Module 04 first met with 1102); whether
-  those two channels are enabled by default at all; and whether Sysmon Event 3 fires on the
-  **receiving** end of an inbound connection, which Module 06 never tested.
+  **Also settled:** the **4732** from the Step 3.1 group addition exists (2026-09-25 10:14:46 UTC),
+  closing a sitting-1 unknown. **New traps:** wrong *channel* is as silent as wrong machine
+  (`Id=24,25` against RemoteConnectionManager returns `NoMatchingEventsFound`); fields for these
+  channels live at **`.Event.UserData.EventXML`**; `Select-String` returns match objects, use
+  `.Line`; the **newest** matching event is not the right event.
 
-  **Verified against the repo while writing**, not recalled: Module 01 **Step 0.3 enabled `Logon`
-  and `Logoff` on WS01 specifically**, not only DC01; `asmith` was created in Module 01 and never
-  deleted (only `svc_backup` was); the domain carries Module 01's **5-attempt / 10-minute lockout
-  policy**, which Steps 8–9 could trip since each fails a logon on purpose; and `.gitignore` covers
-  `*.evtx`, so Step 6.6's export stays out of the repo. **Order-critical:** Module 06's
-  `06-sysmon3-zero.png` must be re-derived **before** Step 3, which **extends** the existing Sysmon
-  `NetworkConnect` group to port 3389 rather than rebuilding it — Module 03's registry rules depend
-  on that file.
+  **Evidence:** `C:\evidence\07-security.evtx` and `07-lsm.evtx` exported on WS01 before anything
+  could roll. **Six screenshots exist on the Windows machine and none are in `assets/`** —
+  `07-sysmon-config.png`, `07-4947-rules-modified.png`, `07-1149-auth.png`,
+  `07-session-lifecycle.png`, `07-session-attribution.png` (the cleanest single image the module
+  has produced) and the 479-event `Group-Object` breakdown.
+
+  **Unexplained, recorded as observations:** 4624 queries with a 4-hour window that returned
+  nothing although the events sat inside it (rotation, rendering and boundary each excluded, no
+  cause established); noted-vs-logged times disagreeing by up to a minute **in both directions**,
+  which switching windows cannot explain; **5 × 1149 for two sessions**; and 479 Security events
+  from one twelve-minute session, consistent with Module 06's parked rate observation but still not
+  measured against a controlled window.
+
+  **Resume at Step 8** — the failed logon. **Steps 8–11 are the last sitting on the VMs**; the
+  Findings section after them is desk work. **Step 9 turns NLA off and must restore
+  `UserAuthentication` to `1`, readback-verified.** `asmith` carries a five-attempt lockout
+  threshold through both steps — `Unlock-ADAccount -Identity asmith` on DC01 is the recovery.
 - ⬜ Modules 08–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
-  current through Module 05, evidence included
+  current through **Module 06**, evidence included. Module 07's sitting logs are committed
+  locally and **not pushed**. Read `git log origin/main..main` rather than trusting this line
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
 - ✅ Module 04 evidence complete: eight PNGs in `assets/`, all three custom views built and
   exported to `assets/xml/` (the reusable deliverable)
@@ -489,13 +484,14 @@ Modules 01/04/05 is sound and needs no change.
    group addition to find on WS01, Module 06's `06-5152-ws01-empty.png`, and optionally filing the
    2026-09-15 `Test-NetConnection` capture as Module 06 evidence. **None of it blocks Step 4.**
 
-2c. **Run Module 07 (RDP), Sitting 2 — Steps 4–7.** ✅ Sitting 1 is **complete** (2026-09-25):
-   `mod07-start` taken on both VMs, all four logbooks proved alive and baselined, RDP on with NLA
-   on, `asmith` permitted, Sysmon armed for 3389. Nothing has been triggered yet, which is the
-   point — every instrument was verified before any activity existed to be missed. **Sitting 2 is
-   the one that produces the deliverable**: one deliberately messy session DC01 → WS01 (log on,
-   **disconnect**, reconnect, log off), found in all four logs and joined. Do not start it with
-   twenty minutes left.
+2c. **Run Module 07 (RDP), the final VM sitting — Steps 8–11.** ✅ Sittings 1 and 2 are
+   **complete** (2026-09-25, 2026-09-28): the lab built, two sessions made, all four logs joined
+   and the access story written. What is left on the machines is **Step 8** (a logon that fails),
+   **Step 9** (the NLA controlled experiment — **must restore `UserAuthentication` to `1` with a
+   readback**), **Step 10** (cleanup; leave `Other Logon/Logoff Events` **on**) and **Step 11**
+   (evidence, including moving six stranded screenshots into `assets/`). Then the **Findings**
+   section, which needs no VM. `asmith`'s five-attempt lockout threshold is live across Steps 8
+   and 9; `Unlock-ADAccount -Identity asmith` on DC01 is the recovery.
 2b. **Optional follow-up experiments Module 06 named but did not run**, each written into the
    findings as an open question rather than glossed: (i) probe a port that returns **RST**
    instead of being stealth-dropped, to discriminate "Sysmon logs completed connections" from
