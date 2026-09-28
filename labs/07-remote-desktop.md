@@ -481,9 +481,9 @@ could act on without re-running any of the work.
 ```
 RDP session — WS01 (10.0.0.20) — 2026-09-28 — CORP\asmith from DC01 (10.0.0.10)
 
-  09:22:39  4624  Security            asmith, Type 3   — NLA credential check
-  09:23:55  4624  Security            asmith, Type 3
-  09:30:20  4624  Security            asmith, Type 3
+  09:22:39  4624  Security            asmith — Logon Type NOT READ (connection attempts)
+  09:23:55  4624  Security            asmith — Logon Type NOT READ
+  09:30:20  4624  Security            asmith, Type 3   — NLA credential check
   09:30:24  4624  Security            asmith, Type 3
   09:30:25  3     Sysmon              inbound tcp/3389 from DC01, svchost.exe, Initiated=false
   09:30:26  4624  Security            asmith, Type 10, Logon ID 0x4F246D, src 10.0.0.10
@@ -509,11 +509,21 @@ its own view of the detach and reattach as **4779** and **4778** for the first t
 at 09:37:33 and left running** with nobody attached, **reattached at 09:41:03**, and deliberately
 ended by the user at **09:42:21**. A second session from the same account and the same source
 followed at 12:58:34 and ended at 13:02:13. Both connections were preceded by NLA credential
-checks appearing as Type 3 logons, and both displaced **`CORP\Administrator`'s console session**
-on WS01 — visible in the session log as a `24`/`25` pair on session 1 with `Address: LOCAL`.
+checks appearing as Type 3 logons.
+
+**Only the afternoon session displaced anyone.** `CORP\Administrator` held WS01's console
+(session 1, `Address: LOCAL`) and was detached at **12:58:31**, three seconds before `asmith`
+logged on, reattaching at **13:04:08** after the sign-out. In the morning no displacement occurred:
+Administrator had already logged off at **09:17:36**, thirteen minutes before `asmith` connected.
+The two sessions therefore differ in a way that matters — one took a machine someone was sitting
+at, the other took an idle one — and **only the occupied case leaves the console-displacement
+trail**.
 
 **What this evidence cannot support**, stated explicitly:
 
+- **The Logon Type of the 09:22:39 and 09:23:55 events.** They were returned by the account
+  filter but their fields were never read, so what kind of logon they were is **unknown**. The
+  09:30 group's pattern makes Type 3 likely; likely is not read.
 - **What was done inside the session.** 154 process-creation events carry the Logon ID, but Module
   06 established that cmdlet activity inside an already-open shell writes **no 4688 at all**. The
   visible processes are a floor, never a ceiling.
