@@ -248,6 +248,303 @@ than the `PS C:\Users\Administrator>` prompt that left `06-auditpol-before.png` 
 Step 3.2 config change. `06-5152-ws01-empty.png` is still capturable at any time and remains
 outstanding.
 
+
+# Run log — Sitting 2 (2026-09-28, Steps 4–7 complete)
+
+### Step 4 — ground truth, as recorded live
+
+All five times are **UTC**, read with `(Get-Date).ToUniversalTime()` on **DC01** except row 2,
+which was read inside the session on **WS01**.
+
+| # | What was done | UTC |
+|---|---|---|
+| 1 | Clock read on DC01 *before* connecting | **09:14:50** |
+| 2 | `whoami` inside the session → **`corp\asmith`** | **09:35:03** |
+| 3 | **Disconnected** — closed the RDP window, did not sign out | **09:38:35** |
+| 4 | **Reconnected** — PowerShell still open with the 09:35:03 output visible | **09:41:07** |
+| 5 | **Signed out** via Start → account icon → Sign out | **09:41:46** |
+
+**Row 1 is not the connect time**, only an upper bound on it: a forgotten password and the RDP
+certificate dialog put roughly twenty minutes between reading the clock and landing on the
+desktop. The authoritative logon timestamp comes from the 4624 and the 1149.
+
+**The session survived the disconnect, verified from the user's side before any log was read.**
+The PowerShell window reopened at 09:41:07 still carrying its 09:35:03 output — nothing was
+restarted or reopened. So the logs have to explain a session that *detached* at 09:38:35 and
+only genuinely *ended* at 09:41:46, a distinction of 3m11s.
+
+**Incidental, and to be labelled as the analyst's own footprints in any later hunt:** `asmith`'s
+password was not remembered at the start of the sitting; failed attempts and any reset performed
+on DC01 belong to this sitting, not to an intruder. Which route was used — the documented
+`Lab-Passw0rd!` or a reset — was **not reported**, so whether a **4724/4738** exists on DC01 at
+around 09:20 UTC on 2026-09-28 is **unknown** and must be read off the log rather than assumed.
+
+### Step 5 — the Security log half
+
+**The session you sat in is Logon ID `0x4F246D`, 4624 at 09:30:26 UTC.** Finding it was not
+straightforward and the route matters as much as the result.
+
+**One RDP attachment writes three 4624s, not one.** Eight 4624s name `asmith`, in three groups:
+
+| UTC | Subject Logon ID | Type | New Logon ID |
+|---|---|---|---|
+| 09:30:20 | `0x0` | **3** | `0x4E9917` |
+| 09:30:24 | `0x0` | **3** | `0x4E9C62` |
+| **09:30:26** | `0x3E7` | **10** | **`0x4F246D`** |
+| 09:40:27 | `0x0` | **3** | `0x727717` |
+| 09:40:49 | `0x0` | **3** | `0x7376F6` |
+| 09:40:54 | `0x3E7` | **10** | `0x741EE0` |
+
+*(Two further 4624s at 09:22:39 and 09:23:55 were returned by the same query but their fields were
+not read — **unknown**, not absent.)*
+
+Two **Type 3** network logons with **no requesting subject** (`0x0`) precede each **Type 10**,
+which carries SYSTEM (`0x3E7`) as subject. The Type 3 pair is NLA checking credentials over the
+network before any session exists. **Counting Type 10s over-counts sessions by one per reconnect;
+counting all of a user's 4624s over-counts by three**, and the Type 3s are indistinguishable from
+ordinary file-share access if only the type is read.
+
+**The newest Type 10 is a trap.** `0x741EE0` (09:40:54) is Type 10 with `Source Network Address
+10.0.0.10`, and looks exactly like the session — but it got a **4634 at 09:41:03**, a **nine-second**
+logon that had already ended before the user was back at the desktop (reconnect noted 09:41:07).
+`Select-Object -First 1` picks it. **The newest matching event is not the same thing as the right
+event.**
+
+**The join key works, and it is a genuine pivot.** `0x4F246D` is carried by **479 events**:
+
+| Count | ID | | Count | ID |
+|---|---|---|---|---|
+| 154 | **4688** process creation | | 14 | 4797 blank-password query |
+| 154 | 5379 Credential Manager read | | 1 | **4624** logon |
+| 50 | 4670 permissions changed | | 1 | **4647** logoff |
+| 50 | 4658 handle closed | | 1 each | 5058 / 5059 / 5061 |
+| 27 | 4656 handle requested | | 25 | 4690 handle duplicated |
+
+**Span 09:30:26 (4624) → 09:42:20 (4647).** The 154 × 4688 is what a Logon ID buys that a timestamp
+never could: twelve minutes of process activity attributed to one authenticated session from one
+source address.
+
+**The session ended with 4647, not 4634.** The transient logon got a 4634 ("session was
+terminated"); the interactive one got **4647 ("user initiated logoff")**. A hunt written for 4634
+alone misses the deliberate sign-out.
+
+**And the disconnect is invisible.** 479 events across the span, **not one 4778 or 4779**, and the
+user was detached from 09:37:33 to 09:41:03. Reading only this log, the session is twelve
+continuous minutes with one person at the desktop throughout.
+
+### The controlled experiment: the disconnect events were switched off
+
+**`auditpol /get /subcategory:"Other Logon/Logoff Events"` returned `No Auditing`** — a third
+switch, distinct from the `Logon` and `Logoff` subcategories verified in Sitting 1. So the silence
+was the instrument, not Windows. This is Module 06's rule applying exactly: *verify the instrument
+before trusting a silence you predicted.*
+
+One variable was then moved. `/success:enable`, **readback confirmed `Success`**, boundary marked
+at **12:55:18 UTC**, and the identical activity repeated (connect, `whoami`, disconnect 12:59:04,
+reconnect, sign out 13:01:38 UTC).
+
+**Result: four events where there had been none.**
+
+| UTC | ID | Owner |
+|---|---|---|
+| 12:58:30 | 4779 | — |
+| 12:59:46 | 4779 | — |
+| 13:01:01 | 4778 | — |
+| 13:04:08 | 4778 | **`administrator`, Session Name `Console`** (read directly) |
+
+**Nothing before 12:55:18**, so this morning's disconnect at 09:37:33 is permanently unrecoverable.
+**Auditing is not retroactive** — the same lesson as Module 02's Step 3 lock-down.
+
+**4778/4779 are not RDP events.** They track *any* session attaching to or detaching from a window
+station, and `Session Name` separates them (`Console` vs `RDP-Tcp#N`). The extra pair is
+Administrator's console session being **displaced** when `asmith` connected — confirmed
+independently by the LocalSessionManager rows below, and by the user's own observation that WS01's
+console prompted them to log off so `asmith` could log in. **"A console session was displaced" is
+exactly what an RDP logon onto an occupied machine looks like, and the event names both sides.**
+
+### Step 6 — the Remote Desktop half
+
+**6.1 — RemoteConnectionManager.** The 1149 names **`asmith@corp.local`** and **source network
+address `10.0.0.10`**. Six hours of that channel held **5 × 1149**, 30 × 263, 10 × 261, 4 × 20524,
+4 × 20523, 4 × 1136, 4 × 258. **Five 1149s for two sessions** — credentials are accepted more than
+once per session. The meanings of 258/261/263/1136/20523/20524 were **not resolved on the box** and
+are not stated here.
+
+**The wrong-channel trap, and it nearly produced a false finding.** `Id=24,25` run against
+**RemoteConnectionManager** returns `NoMatchingEventsFound` — identical to a genuine absence, no
+error. It briefly looked like this build does not record RDP disconnects at all. The two channels
+divide the work: **RemoteConnectionManager is the connection** (1149 — credentials accepted, from
+this address); **LocalSessionManager is the session** (21/22/23/24/25). This lab already had the
+wrong-*machine* version of this trap written down; this is the wrong-*channel* version.
+
+**6.2/6.3 — LocalSessionManager, with attribution.** `EventData.Data` returns **nothing** — the
+prediction held. The fields live at **`.Event.UserData.EventXML`**, as named elements (`User`,
+`SessionID`, `Address`), a **third** shape distinct from both forms met so far. If `EventData.Data`
+is empty, check `UserData` before concluding anything.
+
+| UTC | ID | User | Session | Address |
+|---|---|---|---|---|
+| 09:30:27 | 21 logon | `CORP\asmith` | **3** | `10.0.0.10` |
+| 09:37:33 | **24 disconnected** | `CORP\asmith` | 3 | `10.0.0.10` |
+| 09:41:03 | **25 reconnected** | `CORP\asmith` | 3 | `10.0.0.10` |
+| 09:42:21 | 23 logoff | `CORP\asmith` | 3 | *(empty)* |
+| 12:58:31 | 24 | `CORP\Administrator` | 1 | **`LOCAL`** |
+| 12:58:34 | 21 | `CORP\asmith` | **2** | `10.0.0.10` |
+| 12:59:49 | **24** | `CORP\asmith` | 2 | `10.0.0.10` |
+| 13:01:01 | **25** | `CORP\asmith` | 2 | `10.0.0.10` |
+| 13:02:13 | 23 | `CORP\asmith` | 2 | *(empty)* |
+| 13:04:08 | 25 | `CORP\Administrator` | 1 | `LOCAL` |
+
+**Four results from this table.**
+
+1. **`Address` separates remote from local in one field** — `LOCAL` for console sessions,
+   `10.0.0.10` for RDP. The Security log needs Logon Type 10 *plus* a source address to say as much.
+2. **This channel logs local logons too**, not only RDP (Administrator's console sessions at
+   09:50:21, 11:30:33, 13:40:17). A hunt built on ID 21 alone is not an RDP hunt.
+3. **Session IDs are reused and not ordered.** Morning was session **3**, afternoon session **2** —
+   same user, same machine, same day, later session with the *lower* number. A session ID
+   identifies a session **only within a time window**, and cannot say which of two came first.
+4. **The 23 carries no `Address`**, so a hunt reading only session endings loses the source IP.
+
+**6.5 — Sysmon saw the inbound half, and this closes Module 06's open question.** Total Event 3 =
+**11** against a baseline of **1**; the ten new ones sit on the RDP activity (~5 TCP connections
+per session). One read in full:
+
+| Field | Value |
+|---|---|
+| `Initiated` | **`false`** — the receiving end (Module 06's outbound read `true`) |
+| `Image` | `C:\Windows\System32\svchost.exe` — the victim's own service |
+| `User` | **`NT AUTHORITY\NETWORK SERVICE`** — **`asmith` appears nowhere** |
+| `SourceIp` / `SourceHostname` | `10.0.0.10` / **`DC01`** |
+| `DestinationPort` | `3389` / `ms-wbt-server` |
+| `UtcTime` | `2026-09-28 13:00:45.015` — **printed as UTC explicitly** |
+
+So **Event 3 fires on both ends of a completed connection**, and on the receiving end it attributes
+to a *machine*, not a person. Sysmon is also the only instrument here that prints UTC rather than
+making the analyst convert.
+
+**6.6 — exported** on WS01: `C:\evidence\07-security.evtx` and `C:\evidence\07-lsm.evtx`.
+
+### The join — what actually ties the four logs together
+
+**No single field spans all four, and one identity has four spellings.**
+
+| Log | Identity as printed | Join field it offers |
+|---|---|---|
+| Security 4624/4647 | `asmith` + `CORP` (separate fields) | **Logon ID** `0x4F246D` |
+| RemoteConnectionManager 1149 | **`asmith@corp.local`** | — (address + time only) |
+| LocalSessionManager 21/24/25/23 | **`CORP\asmith`** | **SessionID** `3` |
+| Sysmon Event 3 | **`NT AUTHORITY\NETWORK SERVICE`** | `ProcessGuid` (of svchost) |
+
+**No two of those identity strings match**, so one hunt string cannot search all four — the same
+shape as Module 03's `\REGISTRY\MACHINE\` vs `HKLM\` and Module 06's rule-name case differences.
+
+**The join is made in hops, not on one key.** Logon ID ties the Security log to itself (479
+events). SessionID ties the session log to itself. **Nothing carries both**, so Security ↔
+LocalSessionManager is bridged by **user + source address + a ~1 s timestamp coincidence**
+(4624 09:30:26 / 21 at 09:30:27; 4647 09:42:20 / 23 at 09:42:21). **Two sessions from the same user
+within a minute would not be separable by this evidence except by timestamp** — stated plainly
+because it is a real limit.
+
+**Each log answers exactly one question**: Sysmon *where from* (machine), 1149 *who*,
+LocalSessionManager *what happened to the session*, Security *what the session did*.
+
+### Unexplained, recorded as observations
+
+1. **The 4-hour 4624 queries returned nothing** although the events sat well inside the window.
+   Rotation, message rendering and window boundary were each tested and excluded. The likeliest
+   candidate is that the `-MaxEvents 50` variant was the one that actually ran (it is visible in
+   the screenshot and explains the exact count of 50), but **no cause is established**.
+2. **Noted times and logged times disagree by up to a minute, in both directions.** Morning
+   disconnect: log 09:37:33, noted 09:38:35 (note 62 s late). Afternoon: log 12:59:49, noted
+   12:59:04 (note 45 s *early*). The note can only lag the event, never precede it, so something
+   further is in play — possibly clock skew between DC01 and WS01. **Not established.** Sign-out is
+   the same shape: noted 13:01:38, 23 at 13:02:13; morning 4647 09:42:20 vs noted 09:41:46.
+3. **Five 1149s for two sessions**, and the meanings of RemoteConnectionManager 258/261/263/1136/
+   20523/20524 were never resolved on the box.
+4. **WS01's Windows 11 evaluation licence has expired** — desktop watermark, seen 2026-09-28. This
+   is the wall CLAUDE.md predicted after DC01 hit it on 2026-09-04. Not acted on.
+
+### Lab state changed this sitting
+
+- **`auditpol` `Other Logon/Logoff Events` = Success on WS01**, set 2026-09-28, readback confirmed.
+  **Leave it on** (Module 06 precedent) — it is the only instrument that recorded the console
+  displacement, and Step 10's cleanup should say so rather than revert it.
+- Two `.evtx` exports on WS01 under `C:\evidence\`. Not in the repo; `.gitignore` excludes them.
+- Two RDP sessions and one extra sign-out of Administrator's console session.
+
+### Step 7 — the access story (completed 2026-09-28)
+
+**All times UTC.** Sources named per line. This is the deliverable: the reconstruction a colleague
+could act on without re-running any of the work.
+
+```
+RDP session — WS01 (10.0.0.20) — 2026-09-28 — CORP\asmith from DC01 (10.0.0.10)
+
+  09:22:39  4624  Security            asmith, Type 3   — NLA credential check
+  09:23:55  4624  Security            asmith, Type 3
+  09:30:20  4624  Security            asmith, Type 3
+  09:30:24  4624  Security            asmith, Type 3
+  09:30:25  3     Sysmon              inbound tcp/3389 from DC01, svchost.exe, Initiated=false
+  09:30:26  4624  Security            asmith, Type 10, Logon ID 0x4F246D, src 10.0.0.10
+  09:30:27  21    LocalSessionManager session 3 logon, CORP\asmith, Address 10.0.0.10
+  09:30:28  22    LocalSessionManager shell start
+   (across the session: 154 x 4688 process creation, all carrying Logon ID 0x4F246D)
+  09:37:33  24    LocalSessionManager session 3 DISCONNECTED   <-- session left running
+  09:41:03  25    LocalSessionManager session 3 RECONNECTED
+  09:42:20  4647  Security            user-initiated logoff, Logon ID 0x4F246D
+  09:42:21  23    LocalSessionManager session 3 logoff
+
+  1149  RemoteConnectionManager  asmith@corp.local authenticated from 10.0.0.10
+        (5 x 1149 across the day's two sessions; per-event times not recorded)
+```
+
+**Second session, same host, same account, same source, later the same day:** session **2**, logon
+12:58:34, disconnected 12:59:49, reconnected 13:01:01, logoff 13:02:13 — and, because the
+`Other Logon/Logoff Events` subcategory had been enabled at 12:55:18, the Security log recorded
+its own view of the detach and reattach as **4779** and **4778** for the first time.
+
+**In prose.** `CORP\asmith` authenticated to WS01 over Remote Desktop from **DC01, 10.0.0.10**, at
+**09:30:26 UTC**, holding session 3 for just under twelve minutes. The session was **disconnected
+at 09:37:33 and left running** with nobody attached, **reattached at 09:41:03**, and deliberately
+ended by the user at **09:42:21**. A second session from the same account and the same source
+followed at 12:58:34 and ended at 13:02:13. Both connections were preceded by NLA credential
+checks appearing as Type 3 logons, and both displaced **`CORP\Administrator`'s console session**
+on WS01 — visible in the session log as a `24`/`25` pair on session 1 with `Address: LOCAL`.
+
+**What this evidence cannot support**, stated explicitly:
+
+- **What was done inside the session.** 154 process-creation events carry the Logon ID, but Module
+  06 established that cmdlet activity inside an already-open shell writes **no 4688 at all**. The
+  visible processes are a floor, never a ceiling.
+- **Who was at the keyboard.** The logs prove the credential was used from DC01. They cannot
+  establish that `asmith` used it.
+- **What happened during the 3m30s gap.** The session existed with nobody attached. Nothing in any
+  of the four logs records whether anything ran in it.
+- **That two sessions from this account could be separated if they overlapped.** SessionID is
+  reused and unordered (morning = 3, afternoon = 2), and nothing carries both a SessionID and a
+  Logon ID. Two sessions from the same user within a minute would be separable **only by
+  timestamp**.
+- **That this gap would be visible at all on a default host.** The Security log's own record of the
+  disconnect required a subcategory that ships **off**, and the morning disconnect is recorded only
+  because the LocalSessionManager channel happens to be enabled by default on this build.
+
+**MITRE.** T1021.001 (Remote Services: Remote Desktop Protocol) for the access itself; T1078
+(Valid Accounts) for the use of a legitimate credential, which is what makes this traffic
+indistinguishable from administration without the surrounding context.
+
+### Where the sitting stopped
+
+Steps 4, 5, 6 and 7 are **complete**, including an unplanned controlled experiment that produced the
+sitting's strongest finding. **Resume at Step 8** — the failed logon. Steps 8–11 are the last sitting that
+touches the VMs; the Findings section after it is desk work.
+
+**Screenshots to move into `assets/`** (they exist on the Windows machine, not in the repo):
+`07-1149-auth.png`, `07-session-lifecycle.png`, **`07-session-attribution.png`** (the
+User/SessionID/Address table — the cleanest single image this module has produced), and the Step 5
+`Group-Object` breakdown of the 479 events. Still outstanding from Sitting 1:
+`07-sysmon-config.png`, `07-4947-rules-modified.png`, and Module 06's `06-5152-ws01-empty.png`.
+
 ---
 
 # Step 0 — Pre-flight (both VMs)
