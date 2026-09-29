@@ -769,13 +769,25 @@ exact shape of Module 06's Finding 5.
 **Steps 8 and 9 are complete.** Remaining: **Step 10** (lab-state readbacks), **Step 11**
 (screenshots) and the **Findings** section — all of Step 10 needs the VMs, Findings does not.
 
-**Open, carried forward:**
+**Open, carried forward** — *and here is what became of each. Sitting 4 closed one by running it;
+the rest were **closed as won't-do on 2026-09-29** and survive as declared limitations inside the
+findings, not as work:*
 
-1. **H3's discriminating test** — NLA off, reboot, retry. Five minutes at the start of a sitting.
-2. **The 4625 at 00:29:46 UTC on 2026-09-29** — fields never read.
-3. **`0xC000006A` vs `0xC0000064`** — fail as a nonexistent user and compare. No lockout cost.
-4. **NTLM-because-IP** — connect to `ws01.corp.local`, or look for a 4771 on DC01.
-5. **WS01's expired licence** now costs a reboot roughly hourly, mid-sitting.
+1. ✖ **H3's discriminating test** — NLA off, reboot, retry. **Dropped.** Finding 3's leading
+   candidate, that the running listener never reloaded, therefore **remains untested** and the
+   finding says so.
+2. ✅ **The 4625 at 00:29:46 UTC on 2026-09-29** — **read in sitting 4.** Logon Type **2**,
+   `127.0.0.1`, `Administrator`: a console mistype, **not** a third RDP attempt. `asmith`'s
+   attempt count stands as recorded.
+3. ✖ **`0xC000006A` vs `0xC0000064`** — **dropped.** The sub-status therefore **remains recall,
+   not established.** What sitting 4 *did* establish on the box is that `FailureReason` (`%%2313`,
+   "Unknown user name or bad password") **conflates the two deliberately**, which is why the
+   sub-status distinction matters at all.
+4. ✖ **NTLM-because-IP** — **dropped as a test**, but sitting 4 weakened the hypothesis anyway:
+   the *successful* logon authenticated via **`Negotiate`** where the refusal used **`NTLM`**. If
+   both were made by IP, IP alone does not force NTLM. **Unresolved, and stated as such.**
+5. ⚠️ **WS01's expired licence** costs a reboot roughly hourly, mid-sitting. It did so again during
+   sitting 4, between two captures. Still an active constraint.
 
 ---
 
@@ -986,12 +998,20 @@ passes.
 
 ## Where the sitting stopped
 
-**Step 10 is 5 of 6** — only `Get-LocalGroupMember`, blocked on DC01 being down. **Step 11 is 6 of
-7**, with only `07-4947-rules-modified.png` outstanding and its events permanently gone.
+**Step 10 is 5 of 6** — only `Get-LocalGroupMember`, blocked on DC01 being down. **Step 11 is
+complete**: six screenshots filed this sitting, and `07-4947-rules-modified.png` **dropped by
+decision on 2026-09-29**, its events having already been destroyed by rotation.
 
 **Module 06's two screenshots were not attempted** — they need both VMs up, and DC01 was off.
 That run now carries three jobs rather than two: `06-5152-ws01-empty.png`,
 `06-5152-listening.png`, and the H1/H2 test above.
+
+**Everything else optional across this module and Modules 03 and 06 was closed as won't-do on
+2026-09-29.** The full list is in `summary.md` section C. Each survives as a **declared limitation
+inside the finding it qualifies** rather than as outstanding work — which is the correct place for
+an unrun test. **A finding that names what it could not determine is stronger than one that quietly
+leaves a gap**, and the whole point of this module's Finding 3 is that it is a negative result
+honestly written up.
 
 ---
 
@@ -1010,6 +1030,22 @@ once you edit Sysmon's config in Step 3:
    now-closed port 9999 from WS01 and capture the Event 3 count staying at **1**. The original
    zero state no longer exists, so this is a re-derivation, not a recreation, and the honest
    capture is the count *not moving*.
+
+> ⚠️ **Superseded — this step was not followed, and both items have moved on.** Kept because the
+> order it describes was correct and the cost of ignoring it is the lesson.
+>
+> **`06-sysmon3-zero.png` is permanently unobtainable.** It was skipped on 2026-09-25 to avoid
+> holding up this module; Step 3.2 then added port 3389 to the Sysmon config, and the zero state
+> can no longer be re-derived. **Dropped, not outstanding.** The underlying result is unaffected —
+> Finding 2 rests on the 2026-09-16 run — but the illustration is gone. **This is what "do it
+> before the state changes" costs when it is not done.**
+>
+> **`06-5152-ws01-empty.png` is still outstanding and has also moved**: WS01's Security log was
+> measured at a one-day horizon on 2026-09-29, so the knock it was to illustrate is gone too and
+> the frame has been re-scoped. See that module's checklist.
+>
+> Module 06's remaining two screenshots need **both VMs up** and are listed in `summary.md` under
+> "The next sitting, in order".
 
 ### 0.1 Boot DC01 first and prove the domain is up
 
@@ -2057,13 +2093,14 @@ whose host can no longer be established from the image.
 
 **Still outstanding:**
 
-- [ ] `07-4947-rules-modified.png` — **the 4947s themselves are gone.** WS01's Security log holds
-  roughly one day (measured 2026-09-29) and the burst was 2026-09-25. The `Remote Desktop` rule
-  table still re-reads on demand; the 4947 half can only be **regenerated**, by disabling and
-  re-enabling the rules — which would also test whether **seven 4947s for three rules**
-  reproduces. **Finding 5's first observation still has no image behind it.**
+- [✖] `07-4947-rules-modified.png` — **DROPPED 2026-09-29, and the events are gone regardless.**
+  WS01's Security log holds roughly one day (measured that date) and the burst was 2026-09-25, so
+  the only route was to **regenerate** it by disabling and re-enabling the Remote Desktop rules.
+  Decided against. **Consequence, stated plainly rather than hidden: Finding 5's first observation
+  rests on text with no image behind it** — as does the unexplained count of seven 4947s for three
+  rules, which now stays unexplained.
 - [ ] **Module 06's `06-5152-ws01-empty.png` and `06-5152-listening.png`** — both outstanding;
-  see that module's own checklist, not this one
+  see that module's own checklist, not this one. **The only screenshots left in either module.**
 
 > **The notes said "six screenshots exist on the Windows machine and none are in `assets/`."
 > Three were already there, two under wrong filenames.** Pasting a screenshot into a chat does not

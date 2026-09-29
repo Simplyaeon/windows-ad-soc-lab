@@ -47,9 +47,18 @@ reason anything is left.
 |---|---|---|
 | **A** | **both** | **The `TcpListener` run** — three knocks, one setup. See the table below. It is the only outstanding lab work in either module |
 | **B** | WS01 | `Get-LocalGroupMember -Group 'Remote Desktop Users'` — the last Step 10 row. **Failed with error 1789 while DC01 was down**; expected to pass once it is up |
-| **C** | — | `07-4947-rules-modified.png` — **its events are permanently gone** with the rolled log. Only regenerable by toggling the Remote Desktop rules. Optional |
-| **D** | both | Optional: NLA off → **reboot** → retry (settles Finding 3), and fail as a nonexistent user (settles `0xC000006A`, no lockout cost) |
-| **E** | desk | Commit and push. **`main` was level with `origin/main` at `c5f1c39` on 2026-09-29** — the old "commits are stacked up unpushed" line was stale |
+| **C** | desk | Commit and push. Done 2026-09-29 (`c34880e`); verify with `git log origin/main..main` rather than trusting any line about push state |
+
+**A and B are the whole list.** Everything previously carried as *optional* was **closed as
+won't-do on 2026-09-29** — see `summary.md` section C for the full set. In short:
+`07-4947-rules-modified.png`, the NLA-off-reboot-retry test, the nonexistent-user test, Module 06's
+RST probe and its three other follow-ups, and Module 03's reconstructed screenshots and fresh-SACL
+test.
+
+**They remain written into the Findings as open questions, and that is correct** — an unrun test
+is a limitation to declare, not a task to carry. **Do not re-propose them as work.** If a finding
+reads as though it needs one of them to be complete, the fix is to state the limitation more
+plainly, not to schedule the experiment.
 
 **Item A in detail — three knocks, because the matrix rows differ in setup:**
 

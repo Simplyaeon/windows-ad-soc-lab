@@ -611,32 +611,34 @@ Everything else in Step 10 is read and recorded: `fDenyTSConnections` **0**, `Us
 **1**, `SecurityLayer` **2**, Sysmon v15.15 / schema 4.90 with both ports and all four registry
 rules, and all four audit switches. **The decision is recorded: RDP stays on, with NLA on.**
 
-**C. Module 07 screenshots — nine filed, one outstanding**
+**C. Everything optional — DROPPED by decision, 2026-09-29. Do not re-propose.**
 
-`07-4947-rules-modified.png` — **its events are permanently gone.** WS01's Security log holds
-roughly a day and the 4947 burst was 2026-09-25. The `Remote Desktop` rule table still re-reads;
-the 4947 half can only be **regenerated** by disabling and re-enabling those rules, which would
-also test whether **seven 4947s for three rules** reproduces. Optional. Finding 5's first
-observation has no image behind it either way.
+The following were carried as optional and are now **closed as won't-do**. They are recorded here
+so a future session recognises them as decided rather than forgotten:
 
-**D. Cheap experiments that would upgrade a finding — optional**
+- ✖ **`07-4947-rules-modified.png`** — its events are permanently gone (the burst was 2026-09-25;
+  the log holds a day), and regenerating them means toggling the Remote Desktop rules. **Finding
+  5's first observation stands on text with no image**, which is stated in the finding.
+- ✖ **NLA off → reboot → retry.** Finding 3's leading candidate — that the listener never reloaded
+  — therefore **remains untested**, and the finding says so.
+- ✖ **Fail as a nonexistent user.** `0xC000006A` therefore **remains recall, not established**,
+  and the finding says so. What *is* established is that `FailureReason` conflates the two cases
+  deliberately (`%%2313` = "Unknown user name or bad password").
+- ✖ **Module 06's RST probe**, stealth-mode reconfiguration, the `Query User Default` precedence
+  question, and the 4688-rate re-measurement — the last of these was **answered anyway** by
+  sitting 4's rotation measurement.
+- ✖ **Module 03's three reconstructed screenshots** and the fresh-SACL test for its parked anomaly.
 
-- **NLA off → reboot → retry the identical failure.** Settles Finding 3's leading candidate (the
-  listener never reloaded). WS01's hourly licence shutdown supplies the reboot free.
-- **Fail as a nonexistent user**, compare the Sub Status against `0xC000006A`. No lockout cost, and
-  it settles password-guessing vs username-enumeration. **`FailureReason` is now known to conflate
-  the two deliberately** (`%%2313` = "Unknown user name or bad password"), which makes the
-  `SubStatus` distinction the whole answer.
+**These stay written into the Findings as open questions**, because that is what the evidence
+honestly supports — an unrun test is a limitation to declare, not a task to carry. **The
+distinction matters: they are no longer work, they are still caveats.**
 
-**E. Desk work**
+**D. Desk work**
 
-- **Commit and push.** `main` was level with `origin/main` at `c5f1c39` on 2026-09-29 — the earlier
-  "commits are stacked up unpushed" line was **stale**. Review screenshots before publishing; the
-  repo is public.
+- **Commit and push.** Done 2026-09-29 (`c34880e`); `main` level with `origin/main`. Review
+  screenshots before publishing; the repo is public.
 - Decide on the `.evtx` files on WS01: `07-security.evtx`, `07-lsm.evtx`, `0929-security.evtx`, and
   a fourth dated **2026-08-25** that is **unidentified**. None are in the repo.
-- Optionally file the 2026-09-15 `Test-NetConnection` capture as Module 06 evidence — Finding 2's
-  ground truth, and it identifies its own host via `SourceAddress : 10.0.0.20`.
 
 **The lesson sitting 4 paid for, and it outranks the checklist:** **"recoverable later" is a
 deadline nobody wrote down.** Screenshots recorded as *"recoverable — the event is still in the
@@ -646,25 +648,16 @@ breakdown recoverable at all.
 
 ---
 
-1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
-   Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
-   were never captured. Module 03 is otherwise complete.
-2. 🚩 **NEXT SESSION — one short run with BOTH VMs up closes Module 06 and Module 07.**
+1. 🚩 **NEXT SESSION — one short run with BOTH VMs up closes Module 06 and Module 07.**
    Full checklist above under **"The next sitting, in order"**. After sitting 4 (2026-09-29) the
    only outstanding lab work is the `TcpListener` run, which needs DC01 powered on — that is also
    what blocks Module 07's last Step 10 row and settles the Sysmon `And` question.
-
-2b. **Optional follow-up experiments Module 06 named but did not run**, each written into the
-   findings as an open question rather than glossed: (i) probe a port that returns **RST**
-   instead of being stealth-dropped, to discriminate "Sysmon logs completed connections" from
-   "Sysmon logs connections that got any response"; (ii) determine whether stealth mode is
-   configurable and re-derive the matrix with it off; (iii) establish why row 3 reads
-   `Query User Default` rather than the block rule's name; (iv) measure WS01's 4688 rate in a
-   window controlled for reboots.
-3. **Optionally settle the anomaly** with the fresh-SACL test described above. It needs a clean
-   baseline snapshot, which does not currently exist.
-4. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
+2. **Then Module 08.** Nothing optional stands between here and it — every "could also test" item
+   across Modules 03, 06 and 07 was **closed as won't-do on 2026-09-29** and is listed under
+   section C above. Each survives where it belongs, as a declared limitation inside the finding it
+   qualifies. **Do not re-propose them as work.**
+3. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
    has risen again: Module 02's audit config, Module 03's `Registry` subcategory + Run-key SACL,
    and now the **completed** Sysmon install and config would all need redoing.
-5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-6. Keep the **Progress log** in `README.md` and the status tables here updated as modules complete.
+4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+5. Keep the **Progress log** in `README.md` and the status tables here updated as modules complete.
