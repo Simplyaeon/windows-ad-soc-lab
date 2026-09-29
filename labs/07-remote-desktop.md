@@ -557,6 +557,228 @@ User/SessionID/Address table — the cleanest single image this module has produ
 
 ---
 
+# Run log — Sitting 3 (2026-09-28 → 2026-09-29, Steps 8–9 complete)
+
+**Every value here was pasted back from the machine.** Anything not listed was not read, and is
+**unknown** rather than done. All times UTC; the VMs display UTC+1, so local output read one hour
+ahead and **crossed midnight mid-sitting** — Step 8's events print as 9/28, Step 9's as 9/29.
+
+## Step 8 — a logon that fails, with NLA on (WS01)
+
+Boundary read on **DC01**: **21:25:42**. One deliberate wrong-password attempt via `mstsc.exe` to
+`10.0.0.20` as `asmith@corp.local`, refused once.
+
+**One refusal wrote exactly one 4625**, at **21:26:35** — against **three 4624s** for one
+successful attachment in sitting 2. Successes and failures are not symmetric, so a count of one is
+not a count of the other.
+
+| Field | Value |
+|---|---|
+| Subject | `S-1-0-0`, Account Name `-`, Domain `-`, **Logon ID `0x0`** |
+| **Logon Type** | **3** |
+| Account For Which Logon Failed | SID **`S-1-0-0`**, Account Name **`asmith@corp.local`**, Domain `-` |
+| Failure Reason | Unknown user name or bad password |
+| Status / Sub Status | **`0xC000006D`** / **`0xC000006A`** |
+| Process Information | Caller PID `0x0`, Caller Process Name `-` |
+| Network Information | Workstation Name **`DC01`**, Source Network Address **`10.0.0.10`**, Source Port **`0`** |
+| Detailed Authentication | Logon Process **`NtLmSsp`**, Package **`NTLM`**, Key Length `0` |
+
+**The sheet's prediction survived: Logon Type 3, not 10.** A rule that hunts RDP by watching
+**Type 10** catches every successful RDP logon on this host and **misses every failed one**.
+Successes and failures do not share a logon type, so they do not share a hunt.
+
+**Neither SID resolved.** Subject *and* target both came back `S-1-0-0`. A refused logon yields
+**the string that was typed, never a resolved identity** — Windows does not look up a SID for a
+logon it rejects.
+
+**A fifth spelling of the same person.** This event says `asmith@corp.local` with Domain `-`; the
+successful 4624 said `asmith` + `CORP`. **The same log spells the same user two different ways
+depending on whether they got in**, so a hunt joining 4624 to 4625 on Account Name silently returns
+nothing. Same shape as Module 03's `\REGISTRY\MACHINE\` vs `HKLM\`, now *inside a single channel*.
+
+**`0xC000006A` is recall, not established.** High confidence it means *account exists, password
+wrong* (against `0xC0000064`, no such user), and the `Failure Reason` string deliberately conflates
+the two so the person at the keyboard cannot tell which they got. **Not verified on the box.** The
+discriminating test costs nothing against the lockout budget: fail as a username that does not
+exist and compare the Sub Status. The distinction is the whole difference between **password
+guessing against a known account** and **username enumeration**.
+
+**NTLM, not Kerberos** — `NtLmSsp` / `NTLM`. **Hypothesis, not established:** connecting by **IP**
+forces NTLM because Kerberos needs an SPN and that requires a *name*. Two cheap tests, neither run:
+connect to `ws01.corp.local` and see whether the package changes; or check **DC01** for a `4771`
+near 21:26:35 — Kerberos pre-auth failures land at the DC, NTLM ones do not, so an absent 4771 is
+consistent with NTLM.
+
+### The session log stayed silent, and the control was in the same output
+
+`LocalSessionManager` held nothing after the boundary. Newest events were **21:23:02–21:23:03**:
+three × **59**, then **21**, then **22** — Administrator's console logon after boot.
+
+**That is a positive control 2m40s before the attempt, in the same five rows as the silence.** No
+need to reach back to Step 6's session to prove the channel alive. This is Module 06's *verify the
+instrument before trusting a silence you predicted* applied correctly rather than reproduced as a
+mistake.
+
+**Id 59 resolved on the box** — one of sitting 2's six unresolved IDs:
+`RpcGetCurrentSessionCapabilities from C:\WINDOWS\system32\svchost.exe -k netsvcs -s CertPropSvc`
+(×3) and `from "LogonUI.exe" /flags:0x2 …` (×2). So this channel carries **two different kinds of
+thing**: the session-lifecycle family (21/22/23/24/25) that told sitting 2's whole story, and
+**internal RPC chatter** like 59 that only proves the channel is awake. A hunt must not mistake a
+pile of 59s for activity.
+
+### The connection channel did record it — 26 seconds earlier
+
+`RemoteConnectionManager` returned **261 at 21:26:09**, twenty-six seconds **before** the 4625. No
+new **1149**.
+
+**261 resolved on the box = "Listener RDP-Tcp received a connection"** — a second of sitting 2's
+unresolved IDs closed. Its `UserData.EventXML` carries **only the listener name `RDP-Tcp`**: no
+user, no source address, no port. (`Event_NS` in that output is the XML namespace wrapper, not a
+field.) Checked rather than inferred from the one-line message, because fields can exist without
+being rendered into message text.
+
+**The absence of 1149 is a complete answer, not a truncated one.** `-MaxEvents 10` came back
+*full*, so older events exist — but the ten returned reach back to **21:22:31**, before the
+boundary. The window is fully covered. Contrast the 4625 query, where `-MaxEvents 5` returned
+**3**: a cap that comes back **under** the cap is the one case where a small number is a genuine
+population count and not the filter-first trap.
+
+### What a refused RDP logon leaves behind
+
+| Channel | Got | Says |
+|---|---|---|
+| RemoteConnectionManager | **261** @ 21:26:09 | a connection reached the RDP listener |
+| Security | **4625** Type 3 @ 21:26:35 | *who* was tried, from where, why it failed |
+| LocalSessionManager | **nothing** | no session was ever built |
+| 1149 | **absent** | credentials were never accepted |
+
+**The sharp edge, and it is better than the sheet predicted.** Nothing in the 4625 says *RDP* —
+Type 3, `NtLmSsp`/`NTLM`, Source Port `0`, from `10.0.0.10` is indistinguishable from a failed SMB
+or WinRM logon. The thing that identifies it as RDP is the **261 in a different channel 26 seconds
+earlier**. **The identity-bearing event cannot name the protocol, and the protocol-bearing event
+cannot name the identity.** The hop-based join from sitting 2 is now needed *just to classify the
+event*, not merely to enrich it.
+
+**Candidate finding, observed twice (Steps 8 and 9): `261` present with no matching `1149` is the
+signature of a refused RDP connection.** 1149 is the credentials-accepted marker; a connection that
+arrives and never earns one is what a refusal looks like in that channel.
+
+## Interruption — WS01's expired licence shut the VM down
+
+**WS01's Windows 11 evaluation licence is expired and shuts the machine down roughly hourly.** It
+shut down **after Step 8, before Step 9** — the wall CLAUDE.md predicted after DC01 hit it on
+2026-09-04. This is now an active constraint on sittings, not a future one.
+
+Recovered from the logs rather than from memory: RDP service startup chatter at **00:29:00**
+(`20524`, `263`, `263` — same family as the 21:22:31 boot cluster), then **00:29:49–00:29:50**,
+three × `59`, `21`, `22`. Fields read: **`CORP\Administrator`, SessionID `1`, Address `LOCAL`** —
+a console logon, not RDP.
+
+**Reading the `Address` field is what settled it.** The cluster sat three seconds after an
+unexplained 4625 and had the identical shape to a session being built, which is exactly what a
+refused-logon-builds-a-session result would have looked like. Shape was not enough; the field was.
+
+**An unidentified 4625 at 00:29:46 is carried as unknown.** Its fields were **not read**. The
+user's account of the evening makes a console mistype three seconds before getting in plausible,
+but that is **a guess, not established** — and if it were instead a third RDP attempt, the lockout
+count would be higher than recorded.
+
+## Step 9 — the controlled experiment: NLA off (WS01)
+
+`SystemPropertiesRemote.exe`, NLA unticked, **readback `UserAuthentication = 0`** ✅. Companion
+value read from the same key: **`SecurityLayer = 2`**.
+
+`SecurityLayer`'s meaning is **recall, moderate confidence** (`2` = TLS required, `0` = native RDP
+encryption, `1` = negotiate) and **unlike the event IDs there is no `.Message` to resolve it
+against on this box**. It does not act as a second gate: transport encryption and NLA are different
+things, and `SecurityLayer=2` with `UserAuthentication=0` is a coherent combination.
+
+Boundary on **DC01**: **00:36:34** (2026-09-29). Identical failure, same account, same wrong
+password, once.
+
+### The sheet's own prediction about the experience failed
+
+The run sheet said the far machine would build a desktop and show a Windows login screen *inside*
+the Remote Desktop window. **It did not.** Credentials were collected in DC01's own dialog and
+refused there — `Your credentials did not work` — **visually identical to NLA on**.
+
+### And the logs did not move either
+
+| NLA | 4625? | Logon Type | Auth package | Session log (21/22/24) | 1149 | 261 |
+|---|---|---|---|---|---|---|
+| **On** (Step 8) | 1 @ 21:26:35 | **3** | NtLmSsp / NTLM | **untouched** | none | **261** @ 21:26:09 (−26 s) |
+| **Off** (Step 9) | 1 @ 00:37:58 | **3** | NtLmSsp / NTLM | **untouched** | none | **261** @ 00:37:26 (−32 s) |
+
+The 00:37:58 event was **field for field identical** to Step 8's, including Sub Status
+`0xC000006A` — which also confirms `asmith` was **not locked** at that moment, since a locked
+account carries a different code. The experiment was not contaminated.
+
+**The module's designed lesson did not reproduce on this host.** The sheet expected the bottom row
+to show session events the top row lacked, and it does not. Written up as a negative result, with
+its limit stated: **identical rows are equally consistent with "NLA does not affect failure
+logging" and with "NLA never actually disengaged."**
+
+### The leading explanation, and why it is not established
+
+Three hypotheses were live. **H2** (the server disengaged and the prediction was only wrong about
+the *client*) is weakened by the unchanged client experience. **H1** (a companion value holds NLA
+in force) found no support — `SecurityLayer` is not that gate.
+
+**H3 — the listener needs a reload before a changed `UserAuthentication` applies — is the leading
+candidate.** The sequence, established from the user's account of the evening: **the licence
+shutdown and reboot came *before* the NLA change, not after.** WS01 came up at ~00:29 with NLA
+**on**, the value changed underneath a running listener at ~00:33, and no reload followed. An
+in-session hope that the reboot had served as a free control for H3 was **wrong and retracted** —
+it fell on the wrong side of the change.
+
+**No cause established.** **The discriminating test, not run:** set `UserAuthentication = 0`, let
+the machine restart — the hourly licence shutdown supplies a free reboot — then retry the identical
+failure. Behaviour changes after a reload → H3 confirmed. Behaviour unchanged → NLA genuinely does
+not affect this, and *that* is the finding. Deferred deliberately rather than chased at 02:00, on
+the grounds that it costs a third failed logon and leaving NLA off overnight to chase it is the
+exact shape of Module 06's Finding 5.
+
+### Cleanup, readback-verified
+
+- **9.5 — `UserAuthentication` back to `1`** ✅ read back on **WS01**.
+- **9.6 — `asmith` is not locked out** ✅ read on **DC01**. Two deliberate failures on record
+  (21:26:35 on 9/28, 00:37:58 on 9/29); no `Unlock-ADAccount` was needed, so **no 4767 of the
+  analyst's own making exists** to be mistaken for lab noise later.
+
+## Traps this sitting added
+
+- **`-Name` on `Get-ItemProperty` restricts what comes back.** `Get-ItemProperty -Path … -Name
+  UserAuthentication | Select-Object UserAuthentication, SecurityLayer` printed a **blank
+  `SecurityLayer` column** — not an error, not an empty value. **A property that was never
+  retrieved looks exactly like a property that is empty.** Dropping `-Name` returned both. Same
+  family as the other silent-empty traps: shortest useful form *first*, filter second.
+- **A misspelled channel *name* errors loudly; a real channel with no matches is silent.**
+  `'…RemoteConectionManager…'` returned *"There is not an event log on the localhost computer that
+  matches…"*. Compare sitting 2's wrong-channel trap, which returned `NoMatchingEventsFound` with
+  no error. **Refines the existing trap: only a channel that exists can fool you.**
+- **A cap returning fewer rows than the cap is a complete population.** `-MaxEvents 5` → 3 events
+  means three exist. The mirror of the filter-first trap, and the one case where a small number is
+  an answer.
+- **A full cap can still give a complete answer** if its oldest row predates your boundary. Check
+  what the window *covers*, not just whether it filled.
+- **Shape is not a field.** A `59,59,59 → 21 → 22` cluster three seconds after a 4625 looked
+  exactly like a session being built for a failed logon. `Address: LOCAL` killed it in one read.
+
+## Where the sitting stopped
+
+**Steps 8 and 9 are complete.** Remaining: **Step 10** (lab-state readbacks), **Step 11**
+(screenshots) and the **Findings** section — all of Step 10 needs the VMs, Findings does not.
+
+**Open, carried forward:**
+
+1. **H3's discriminating test** — NLA off, reboot, retry. Five minutes at the start of a sitting.
+2. **The 4625 at 00:29:46 UTC on 2026-09-29** — fields never read.
+3. **`0xC000006A` vs `0xC0000064`** — fail as a nonexistent user and compare. No lockout cost.
+4. **NTLM-because-IP** — connect to `ws01.corp.local`, or look for a 4771 on DC01.
+5. **WS01's expired licence** now costs a reboot roughly hourly, mid-sitting.
+
+---
+
 # Step 0 — Pre-flight (both VMs)
 
 ### 0.0 Close out Module 06 first — and mind the order
@@ -1534,14 +1756,40 @@ Each screenshot needs `hostname` at the top of the frame. Both VMs prompt
 `PS C:\Users\Administrator>`, and `06-auditpol-before.png` is a genuine, unrepeatable baseline
 whose host can no longer be established from the image.
 
-- [ ] `07-sysmon-config.png` — live config readback showing both ports and the registry rules
+**Filed in `assets/`, each opened and checked against its actual contents (2026-09-29):**
+
+- [x] **`07-1149-auth.png`** — five 1149s and `$auth.Message` showing `asmith@corp.local`, an
+  **empty Domain field** and `10.0.0.10`. **Carries `hostname` → `WS01` at the top of the frame**,
+  so it is self-attributing. *(Arrived on disk as `07-1149-auth.png.png` — renamed.)*
+- [x] **`07-session-attribution.png`** — the User / SessionID / Address table for both sessions.
+  The strongest single image in the module: `LOCAL` vs `10.0.0.10` in one column, SessionID **3**
+  in the morning and **2** in the afternoon, and the `23` rows visibly missing an `Address`. The
+  `EventXML / -------- / EventXML` fragment at the top of the frame is the `UserData`-prints-only-
+  the-wrapper trap, captured by accident.
+- [x] **`07-session-lifecycle.png`** — 21 → 24 → 25 → 23 with timestamps. Strictly weaker than
+  the attribution shot (no user, no address, **no hostname in frame**), but it is the clean
+  lifecycle sequence. *(Arrived as `Session-Lifecycle.png` — renamed to the convention.)*
+
+**Still outstanding:**
+
+- [ ] `07-sysmon-config.png` — live config readback showing both ports and the registry rules.
+  Recoverable on demand: `Sysmon64.exe -c` re-reads the live config.
+- [ ] `07-4947-rules-modified.png` — the `Remote Desktop` rule table and the 4946/4947/4948 query
+  in one frame. **Finding 5's first observation currently rests on text with no image behind it.**
 - [ ] `07-4624-type10.png` — the logon, with Logon Type 10, source address and Logon ID visible
-- [ ] `07-session-lifecycle.png` — 21 → 24 → 25 → 23 in one frame
-- [ ] `07-1149.png` — the authentication event with user and source address
-- [ ] `07-join-table.png` — or the table written into this file; the join is the deliverable
-- [ ] `07-4625-nla-on.png` — the failed logon with NLA on, failure reason visible
+- [ ] `07-4625-nla-on.png` — the failed logon with NLA on, Logon Type **3** and the Sub Status
+  visible. **Finding 3's headline.** Recoverable — the event is still in the log.
 - [ ] `07-nla-comparison.png` — the two halves of the Step 9 matrix
-- [ ] The access story from Step 7, written out
+- [ ] `07-261-listener.png` — the 261 and its `EventXML` showing **only** `RDP-Tcp`. Supports
+  Finding 3's "the protocol-bearing event cannot name the identity".
+- [ ] The Step 5 `Group-Object` breakdown of the 479 events
+- [x] The access story from Step 7, written out — in this file
+- [ ] **Module 06's `06-5152-ws01-empty.png`** — confirmed absent from `assets/` on 2026-09-29;
+  Module 06 cannot be called complete without it
+
+> **The notes said "six screenshots exist on the Windows machine and none are in `assets/`."
+> Three were already there, two under wrong filenames.** Pasting a screenshot into a chat does not
+> put it on disk — but neither does a stale note prove it is missing. **Check the directory.**
 
 **Check every screenshot against its actual contents before filing it.** Reading Module 06's ten
 corrected three things that had been recorded wrongly from memory, including a scare about
@@ -1551,34 +1799,328 @@ missing events that turned out to be a mistyped event ID.
 
 # Findings
 
-**Left deliberately unwritten.** Findings are written *from* the run, in
-**observation → inference → recommendation** form, with the three kept strictly separate.
-Observation is only what the log literally says, in UTC. Inference is labelled judgement with
-confidence language and an explicit statement of what cannot be determined. Recommendation names
-the follow-up queries.
+**Written from the run.** Observation is only what the log literally says, in **UTC** — the VMs
+display UTC+1, so every local time in a screenshot reads one hour ahead of the figure quoted here.
+Inference is labelled judgement. Recommendation names the follow-up queries.
 
-The questions each finding should answer:
+Evidence for each finding is the run log above; screenshots are named where they exist.
 
-**Finding 1 — What ties four logs into one session?** Name the join key or keys. State plainly
-whether a single field spans all four, and whether two simultaneous sessions from one user would
-still be separable. An honest "only by timestamp, which is insufficient" is a stronger finding
-than a confident wrong one.
+---
 
-**Finding 2 — Disconnected is not logged off.** The 24/25 pair, and what the logs can and cannot
-say about a session that exists with nobody attached. Relevant technique: RDP session hijacking.
+## Finding 1 — One session, four logbooks, and no field that spans them
 
-**Finding 3 — What a failed logon records, and what NLA changes.** The Step 9 matrix. If the
-Logon Type differs between success and failure, say what that does to a detection rule written
-only for Type 10. Give both sides of the NLA trade-off.
+**Observation.** A single RDP session from DC01 (`10.0.0.10`) to WS01 on 2026-09-28 appears in four
+separate logs, and the same user is spelled four different ways:
 
-**Finding 4 — Which host holds the evidence.** The client machine records little; the target holds
-almost everything. Compare deliberately with Module 06, where the attribution was on neither.
+| Log | Event | What it printed for the user |
+|---|---|---|
+| Security | 4624, Type 10, 09:30:26, Logon ID `0x4F246D` | `asmith` + domain `CORP` |
+| TerminalServices-RemoteConnectionManager | 1149, 09:30:24 | `asmith@corp.local`, **Domain field empty** |
+| TerminalServices-LocalSessionManager | 21, 09:30:27, SessionID `3` | `CORP\asmith` |
+| Sysmon | Event 3, `DestinationPort` 3389 | `NT AUTHORITY\NETWORK SERVICE` |
 
-**Finding 5 — Whichever prediction in this run sheet turned out wrong.** Module 06 recorded its
-own author's mistake rather than quietly patching it, and that became one of its most useful
-findings. This sheet makes several explicit predictions — the NLA hypothesis, Logon Type 3 on
-failure, `UserData` rather than `EventData`, Sysmon on the receiving end. **Some of them will be
-wrong.** Write up which, and what the evidence actually said.
+**No two of those match as strings.** The Security log's Logon ID (`0x4F246D`) appears nowhere
+outside the Security log; LocalSessionManager's SessionID (`3`) appears nowhere outside that
+channel. The two identifiers never co-occur in a single event.
+
+The session was reconstructed by joining on **user + source address + timestamp proximity**: the
+1149 at 09:30:24, the 4624 at 09:30:26 and the LocalSessionManager `21` at 09:30:27 sit within
+three seconds of each other and share `10.0.0.10`.
+
+Each log answers exactly one question: **Sysmon** where the connection came from (a machine),
+**1149** who authenticated, **LocalSessionManager** what happened to the session,
+**Security** what the session did.
+
+*Evidence: `07-session-attribution.png`, `07-1149-auth.png`.*
+
+**Inference.** I assess with **high confidence** that no single field joins these four logs on this
+build, and that any correlation rule must therefore be written as a multi-hop join keyed on user,
+source address and a timestamp tolerance. I assess with **high confidence** that a hunt written
+with one identity string will silently return partial results — the same structural failure as
+Module 03's `\REGISTRY\MACHINE\` vs `HKLM\`, and now demonstrated across four channels instead of
+two.
+
+**What cannot be determined from this evidence:** the join is **not reliable for concurrent
+sessions**. Two logons by the same user from the same source within the timestamp tolerance would
+be separable only by ordering, and nothing in the evidence establishes that the four channels
+order simultaneous events consistently. This is a real limit of the method, not a gap in the data
+collection.
+
+Relevant technique: **T1021.001** (Remote Services: Remote Desktop Protocol), **T1078** (Valid
+Accounts) — a legitimate credential is what makes this traffic indistinguishable from
+administration without the surrounding context.
+
+**Recommendation.**
+
+- Normalise the account field at ingest — strip the UPN suffix and the `DOMAIN\` prefix to a bare
+  `samAccountName` — **before** any correlation rule runs. Do not rely on the raw strings.
+- Key the RDP correlation on `(normalised user, source address, ±5 s)` and treat the result as a
+  candidate, not a fact, whenever more than one session from that user is open.
+- Retain the Logon ID as the pivot **within** the Security log: `Get-WinEvent -FilterHashtable
+  @{LogName='Security'; StartTime=…}` filtered on the session's Logon ID is what turns "who logged
+  on" into "what they did".
+
+---
+
+## Finding 2 — A disconnected session is still a live session, and the Security log does not say so
+
+**Observation.** The session `0x4F246D` opened with a 4624 at **09:30:26** and ended with a
+**4647** at **09:42:20**. Between those, the user detached from the session at **09:37:33** and
+reattached at **09:41:03** — a gap of **3m30s** during which the session existed with nobody
+attached to it.
+
+**None of the 479 Security-log events carrying Logon ID `0x4F246D` marks that gap.** The
+Security log records the session as continuous.
+
+LocalSessionManager records it in two rows, each carrying user, SessionID and source address:
+
+| UTC | ID | Meaning | User / Session / Address |
+|---|---|---|---|
+| 09:37:33 | **24** | disconnected | `CORP\asmith` / 3 / `10.0.0.10` |
+| 09:41:03 | **25** | reconnected | `CORP\asmith` / 3 / `10.0.0.10` |
+
+The detachment was independently confirmed from the user's side before any log was read: a
+PowerShell window reopened at reconnect still carrying output written at 09:35:03, so nothing had
+been restarted.
+
+Two further observations from the same channel: **the `23` (logoff) carries no `Address`**, and
+**this channel logs local console sessions too** — `CORP\Administrator`, SessionID `1`, `Address:
+LOCAL` at 09:50:21, 11:30:33 and 13:40:17.
+
+*Evidence: `07-session-lifecycle.png`, `07-session-attribution.png`.*
+
+**Inference.** I assess with **high confidence** that a detection built only on Security-log logon
+and logoff events cannot distinguish a session that ended from a session that is still resident
+with no one attached, and that this matters because a disconnected session holds a live token.
+That is the precondition for **T1563.002** (Remote Service Session Hijacking: RDP) — an attacker
+with SYSTEM on the host can attach to a disconnected session without ever authenticating as its
+owner, and the 4624 for that attach names the hijacker's context, not the session's owner.
+
+I assess with **moderate confidence** that ID `21` alone is not a usable RDP indicator on this
+build, because the same ID is written for local console logons; `Address` is the field that
+separates them, not the ID.
+
+**What cannot be determined from this evidence:** no hijack was performed, so this run does not
+establish what the logs look like *during* a hijack — only that the precondition is invisible in
+the Security log. The 3m30s gap here was benign.
+
+**Recommendation.**
+
+- Alert on **ID 24 with no matching ID 25 or 23** within a defined window — a session left
+  disconnected is the state worth knowing about.
+- Use `Address` to classify, never the event ID alone:
+  `([xml]$e.ToXml()).Event.UserData.EventXML` → `Address` is `LOCAL` for console, an IP for RDP.
+- Enumerate resident sessions on demand (`qwinsta`) when a host is under investigation; the log
+  tells you a session was left open, the host tells you whether it still is.
+
+---
+
+## Finding 3 — A refused RDP logon is Logon Type 3, and NLA changed nothing
+
+**Observation — the failure itself.** One deliberate wrong-password attempt as
+`asmith@corp.local` from DC01 on 2026-09-28 produced **exactly one 4625**, at **21:26:35**:
+
+| Field | Value |
+|---|---|
+| **Logon Type** | **3** |
+| Account Name | **`asmith@corp.local`**, Account Domain `-` |
+| Security ID (subject **and** target) | **`S-1-0-0`** |
+| Status / Sub Status | `0xC000006D` / `0xC000006A` |
+| Workstation Name / Source | `DC01` / `10.0.0.10`, Source Port `0` |
+| Logon Process / Package | `NtLmSsp` / **NTLM** |
+
+One *successful* attachment writes **three** 4624s; one *failure* writes **one** 4625. The
+successful interactive logon was **Type 10**; the failure was **Type 3**.
+
+**Observation — the three channels.**
+
+| Channel | Result |
+|---|---|
+| RemoteConnectionManager | **261** at **21:26:09** — "Listener RDP-Tcp received a connection", 26 s before the 4625 |
+| Security | **4625**, Type 3, at 21:26:35 |
+| LocalSessionManager | **nothing** — and the channel proved itself alive 2m40s earlier with a console-logon cluster at 21:23:02–21:23:03 |
+| 1149 | **absent** |
+
+The **261 carries only the listener name** `RDP-Tcp` — read from
+`.Event.UserData.EventXML`, not inferred from its one-line message. No user, no source address, no
+port.
+
+**Observation — the NLA experiment.** `UserAuthentication` was set to `0` and read back as `0`;
+`SecurityLayer` read `2`. The identical failure was repeated on 2026-09-29 at **00:37:58**:
+
+| NLA | 4625 | Logon Type | Package | Session log | 1149 | 261 |
+|---|---|---|---|---|---|---|
+| **On** | 1 @ 21:26:35 | **3** | NtLmSsp / NTLM | untouched | none | 21:26:09 (−26 s) |
+| **Off** | 1 @ 00:37:58 | **3** | NtLmSsp / NTLM | untouched | none | 00:37:26 (−32 s) |
+
+**The rows are identical, field for field.** The client experience was also unchanged: no login
+screen appeared inside the Remote Desktop window; credentials were collected in DC01's own dialog
+and refused there.
+
+**Inference.** I assess with **high confidence** that on this build a failed RDP logon is recorded
+as **Logon Type 3**, and therefore that **a detection rule scoped to Logon Type 10 catches every
+successful RDP logon on this host and misses every failed one.** Successes and failures do not
+share a logon type, so they cannot share a hunt. This is the single most actionable result in the
+module.
+
+I assess with **high confidence** that **no single event classifies the attempt as RDP**. The 4625
+is Type 3 over NTLM with Source Port `0` — indistinguishable from a failed SMB or WinRM logon — and
+the 261 that does identify the protocol carries no identity. **The identity-bearing event cannot
+name the protocol; the protocol-bearing event cannot name the identity.** The multi-hop join from
+Finding 1 is therefore required *to classify the event at all*, not merely to enrich it.
+
+I assess with **moderate confidence** that **261 present with no matching 1149** is a usable
+signature for a refused RDP connection, on the reasoning that 1149 is the credentials-accepted
+marker. Observed twice. **This is a candidate signature, not an established one** — no run has yet
+confirmed that every refusal produces a 261, nor that a 261 cannot occur without an authentication
+attempt following it.
+
+**On NLA, the honest statement is a negative result.** The run sheet predicted that disabling NLA
+would cause the session to be built before authentication, leaving session-log traces that an
+NLA-on failure does not. **It did not.** **No cause is established.** The evidence is equally
+consistent with two explanations, and I will not choose between them:
+
+- **NLA does not affect what a failure records on this build.**
+- **NLA never actually disengaged** — the value was changed underneath a running listener with no
+  reload. This is the **leading candidate**, because the client experience was also unchanged, and
+  because the licence-driven reboot that night fell *before* the change rather than after it.
+
+`SecurityLayer = 2` was read and **excluded** as a second gate: transport encryption and NLA are
+independent settings.
+
+**What cannot be determined from this evidence:** whether NLA affects failure logging at all;
+whether `0xC000006A` specifically means *wrong password against an existing account* as opposed to
+*no such user* (the `Failure Reason` string deliberately conflates them, and the code's meaning was
+**not resolved on the box**); and whether NTLM was selected because the connection was made by IP
+rather than by name.
+
+Relevant technique: **T1110.001** (Brute Force: Password Guessing) — a real campaign would produce
+many of these events; **T1021.001** for the access attempt.
+
+**Recommendation.**
+
+- **Rewrite any RDP failure rule to key on 4625 with Logon Type 3 plus a source address**, and
+  join to a 261 in `Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational` within
+  ~60 s to confirm the protocol. A Type 10 rule will not fire.
+- **Alert on the Sub Status, not the Failure Reason string.** `0xC000006A` and `0xC0000064` are the
+  difference between password guessing against a known account and username enumeration, and the
+  rendered message hides it.
+- **Run the three outstanding discriminating tests**, all cheap:
+  - NLA off → **reboot** → repeat the failure. Settles the leading candidate.
+  - Fail as a nonexistent user and compare the Sub Status. No lockout cost.
+  - Connect to `ws01.corp.local` instead of `10.0.0.20`, or query DC01 for a **4771** around the
+    failure time — Kerberos pre-auth failures land at the DC, NTLM ones do not.
+
+---
+
+## Finding 4 — The target holds the evidence; the client holds almost none
+
+**Observation.** Every event cited in Findings 1–3 was read on **WS01**, the machine that was
+connected *to*. The 4624s, the 4625s, the 1149s, the session lifecycle and the Sysmon Event 3s all
+live there. DC01 — the machine the connections were *made from* — was used only to read the clock
+and run `mstsc.exe`, and `Get-ADUser` for the lockout check.
+
+Sysmon on WS01 recorded the inbound half with `Initiated: false`, `SourceHostname DC01`,
+`DestinationPort 3389` — but attributed it to `Image: svchost.exe`, `User: NT AUTHORITY\NETWORK
+SERVICE`. **`asmith` appears nowhere in the Sysmon event.** In Module 06 the *outbound* Sysmon
+Event 3 from WS01 named `powershell.exe` and the real user; the receiving end cannot.
+
+**Inference.** I assess with **high confidence** that RDP investigation on this build must begin on
+the destination host, and that a SOC collecting logs only from servers-of-interest and not from
+workstations will see lateral movement *into* monitored hosts and be blind to movement *between*
+unmonitored ones.
+
+I assess with **high confidence** that Sysmon `NetworkConnect` attributes a **machine on the
+receiving end, never a person** — the process that accepts the connection is a service running as
+a service account. Combined with Module 06's finding that Sysmon Event 3 does not fire at all for
+an unanswered probe, the picture is: **Sysmon attributes completed connections, from the initiating
+side, to a person only when the initiating host is instrumented.**
+
+**What cannot be determined from this evidence:** what DC01's own logs held for these connections
+was **not read**. The claim that the client records "almost none" rests on the design of the
+protocol and on Module 06's outbound findings, **not on a query run against DC01 during this
+module.** That is a gap in this run, not a conclusion.
+
+**Recommendation.**
+
+- Collect the Security log **and** both TerminalServices channels from workstations, not only
+  servers. `Microsoft-Windows-TerminalServices-LocalSessionManager/Operational` is enabled by
+  default on this build and holds the session story in two lines.
+- Close this finding's own gap: run the Step 5 and Step 6 queries **on DC01** for the same time
+  windows and record what the initiating host actually kept.
+
+---
+
+## Finding 5 — Four of this run sheet's own predictions were wrong
+
+Module 06 recorded its author's mistakes rather than quietly patching them, and that became its
+most useful finding. This sheet made explicit predictions. Four failed.
+
+**Observation 1 — enabling RDP writes 4947, not 4946.** The sheet said to watch for a **4946**
+("a rule was added"). There was none. There were **seven 4947s** ("a rule was modified") in a
+two-second burst at **09:39:25–09:39:26** on 2026-09-25. The Remote Desktop rules **already
+existed, shipped disabled**; enabling RDP flipped `Enabled` on three rules
+(`Shadow (TCP-In)`, `User Mode (TCP-In)`, `User Mode (UDP-In)`, all `Profile: Any`). Why three
+rules produced seven events is **not established**.
+
+**Observation 2 — the disconnect events were switched off, not absent.** The expected 4778/4779
+were missing. `auditpol /get /subcategory:"Other Logon/Logoff Events"` returned **`No Auditing`** —
+a **third** switch, distinct from the `Logon` and `Logoff` subcategories verified in sitting 1.
+Enabled, readback confirmed, boundary marked at **12:55:18**, identical activity repeated:
+**four events where there had been none, and nothing before the boundary.**
+
+**Observation 3 — NLA changed nothing.** Covered in Finding 3. Both the predicted log difference
+and the predicted change in the connection's *appearance* failed to materialise.
+
+**Observation 4 — a 4625 window that could not fail.** Step 8.3 was written as "run the query and
+expect nothing" for the session log. That expectation was only meaningful because the channel had
+written a console-logon cluster **2m40s before** the attempt, in the same five rows as the
+silence. Without that control the empty result would have been worth nothing — the same mistake
+Module 06's Step 7.1 made and corrected.
+
+**Inference.** I assess with **high confidence** that the recurring failure mode across three
+modules is the same one: **an absence was read as evidence before the instrument was proven alive.**
+Module 02 found object auditing gated at four independent layers; Module 06 found a packet-drop
+subcategory off by default; this module found a *third* logon subcategory off by default. In every
+case the log was silent and the silence looked like a fact about Windows.
+
+I assess with **high confidence** that **4946 and 4947 are not interchangeable**: 4946 means a rule
+that did not exist now does; 4947 means an existing rule changed. **A firewall hunt written only
+for 4946 misses a host being opened up to RDP entirely**, because the rules ship pre-installed and
+merely get enabled.
+
+**What cannot be determined from this evidence:** why seven 4947s were written for three rules; and
+whether NLA has any effect on failure logging, for the reasons in Finding 3.
+
+Relevant technique: **T1562.002** (Impair Defenses: Disable Windows Event Logging) — an
+adversary does not need to clear a log if the subcategory that would have written to it was never
+enabled. Three of this lab's modules found such a subcategory off by default on a stock install.
+
+**Recommendation.**
+
+- **Hunt 4946 and 4947 together.** A rule flipped from disabled to enabled is the realistic path to
+  a host being exposed, and it writes only the second.
+- **Audit the audit configuration as a standing control.** `auditpol /get /category:*` on every
+  host, compared against a baseline, catches the gate that is closed before an investigation
+  depends on it. Verify the instrument before trusting a silence, every time.
+- **Record predictions in the run sheet before the run, and record which ones died.** Three of the
+  four failures above were only visible because the prediction was written down first.
+
+---
+
+## Open questions carried out of this module
+
+Named so they are not mistaken for settled results.
+
+| # | Question | Discriminating test |
+|---|---|---|
+| 1 | Does NLA affect failure logging at all? | NLA off → **reboot** → repeat the failure |
+| 2 | Does `0xC000006A` mean *wrong password* rather than *no such user*? | fail as a nonexistent user, compare Sub Status |
+| 3 | Was NTLM selected because the connection was made by **IP**? | connect to `ws01.corp.local`; or look for a **4771** on DC01 |
+| 4 | What did **DC01** record about connections it initiated? | run the Step 5/6 queries on DC01 |
+| 5 | Why seven 4947s for three rules? | not chased |
+| 6 | What is the unidentified **4625 at 00:29:46 on 2026-09-29**? | read its fields; a console mistype is plausible but unestablished |
+| 7 | Why **5 × 1149** for two sessions? | not chased |
 
 ---
 

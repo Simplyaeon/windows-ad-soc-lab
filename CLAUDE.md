@@ -373,7 +373,7 @@ trusted by filename:**
    printed. Also verified: `ProfileChanged` reads `(null)` for a single-profile rule and `All`
    for `-Profile Any`.
 
-### Module 07 (Remote Desktop) — IN PROGRESS, sittings 1–2 complete
+### Module 07 (Remote Desktop) — IN PROGRESS, sittings 1–3 complete
 
 Written 2026-09-22 (`labs/07-remote-desktop.md`). **Sitting 1 ran 2026-09-25 in two parts and is
 complete** — Steps 0–3. WS01 only so far.
@@ -530,11 +530,112 @@ LocalSessionManager *what happened to the session*, Security *what the session d
 **Evidence: two `.evtx` exports on WS01** — `C:\evidence\07-security.evtx` and
 `C:\evidence\07-lsm.evtx`, taken 2026-09-28 before anything could roll. Not in the repo.
 
-**Six screenshots exist on the Windows machine and none are in `assets/`** — pasting into a chat
-does not put them on disk. From sitting 1: `07-sysmon-config.png`, `07-4947-rules-modified.png`.
-From sitting 2: `07-1149-auth.png`, `07-session-lifecycle.png`, **`07-session-attribution.png`**
-(the User/SessionID/Address table — the cleanest single image this module has produced), and the
-`Group-Object` breakdown of the 479 events.
+**Three Module 07 screenshots ARE in `assets/`** — checked on disk 2026-09-29 and each one
+**opened and verified against its contents**: `07-1149-auth.png` (five 1149s plus the
+`asmith@corp.local` / empty-Domain / `10.0.0.10` message — and it **carries `hostname` → `WS01`
+in frame**, so it is self-attributing), `07-session-attribution.png` (the User/SessionID/Address
+table — the cleanest single image the module has produced) and `07-session-lifecycle.png`.
+**Two arrived under wrong filenames and were renamed** — `07-1149-auth.png.png` (double
+extension) and `Session-Lifecycle.png` (wrong convention).
+
+**The earlier note here said "six screenshots exist on the Windows machine and none are in
+`assets/`." That was stale.** Pasting into a chat does not put a file on disk — but a stale note
+does not prove one is missing either. **Check the directory before recording an absence.**
+
+**Still outstanding:** `07-sysmon-config.png` and `07-4947-rules-modified.png` (sitting 1 — the
+second is **Finding 5's first observation with no image behind it**), the 479-event `Group-Object`
+breakdown, and from sitting 3 `07-4625-nla-on.png`, `07-nla-comparison.png`, `07-261-listener.png`
+— all recoverable, the events are still in the logs. **Module 06's `06-5152-ws01-empty.png` is
+confirmed absent** from `assets/`, which still blocks calling Module 06 complete.
+
+**Sitting 3 ran 2026-09-28 → 2026-09-29 — Steps 8 and 9 complete, both VMs. Resume at Step 10.**
+Steps 10 (lab-state readbacks) and 11 (screenshots) still need the VMs; Findings is desk work.
+
+**A refused RDP logon is Logon Type 3, not 10** — the sheet's prediction, confirmed on the box.
+**One refusal wrote exactly one 4625** (21:26:35 UTC), against **three 4624s** for one successful
+attachment: successes and failures are not symmetric, so a count of one is not a count of the
+other. A hunt written on **Type 10** catches every successful RDP logon and **misses every failed
+one**.
+
+**The module's sharpest result: no single event can classify the attempt.**
+
+| Channel | Got | Says |
+|---|---|---|
+| RemoteConnectionManager | **261** @ 21:26:09 UTC | a connection reached the RDP listener |
+| Security | **4625** Type 3 @ 21:26:35 UTC | *who* was tried, from where, why it failed |
+| LocalSessionManager | **nothing** | no session was ever built |
+| 1149 | **absent** | credentials were never accepted |
+
+Nothing in the 4625 says *RDP* — Type 3, `NtLmSsp`/`NTLM`, Source Port `0`, from `10.0.0.10` is
+indistinguishable from a failed SMB or WinRM logon. **The identity-bearing event cannot name the
+protocol, and the protocol-bearing event cannot name the identity**, so the hop-based join is now
+needed *just to classify the event*. **Candidate finding, observed twice: `261` with no matching
+`1149` is the signature of a refusal.**
+
+**Verified during the run — only what the user pasted back:**
+
+| Fact | Evidence |
+|---|---|
+| **4625 Logon Type 3** for a refused RDP logon, NLA on **and** off | two events, 21:26:35 UTC 9/28 and 00:37:58 UTC 9/29, **field for field identical** |
+| **Neither SID resolves** | subject *and* target both `S-1-0-0`. A refused logon yields **the string typed, never an identity** |
+| **A fifth spelling of `asmith`** | 4625 says `asmith@corp.local` with Domain `-`; the successful 4624 said `asmith` + `CORP`. **The same log spells the same user differently depending on whether they got in** — a 4624↔4625 join on Account Name silently returns nothing |
+| **261 = "Listener RDP-Tcp received a connection"** | resolved on the box. Closes one of sitting 2's six unresolved IDs |
+| **261 carries only the listener name** | `UserData.EventXML` → `RDP-Tcp` and nothing else. No user, no source address, no port. (`Event_NS` there is the namespace wrapper, not a field) |
+| **59 = `RpcGetCurrentSessionCapabilities`** | from `svchost.exe -k netsvcs -s CertPropSvc` (×3) and `"LogonUI.exe"` (×2). Closes a second unresolved ID. **LocalSessionManager carries two kinds of thing** — the 21/22/23/24/25 lifecycle family, and RPC chatter that only proves the channel is awake |
+| **The silence had its control in the same output** | a `59,59,59 → 21 → 22` console-logon cluster **2m40s before** the attempt. No need to reach back to Step 6 |
+| `SecurityLayer = 2` alongside `UserAuthentication` | read 2026-09-29; **not** a second NLA gate — transport encryption and NLA are different things. Its meaning is **recall, not resolved on the box** (no `.Message` for a registry value) |
+| **NLA cleanup verified** | `UserAuthentication` back to **`1`** on WS01 |
+| **`asmith` not locked** | read on DC01 after two deliberate failures. **No analyst-generated 4767 exists** to be mistaken for lab noise |
+
+**The NLA experiment is a negative result, and must be written up as one.** With
+`UserAuthentication = 0` (readback-verified) the 4625 was identical, the session log untouched, no
+1149, and a **261** 32 s ahead of the failure. **Even the visible prediction failed** — no login
+screen appeared inside the RDP window; credentials were collected in DC01's own dialog exactly as
+with NLA on. The two matrix rows match exactly.
+
+**No cause established.** `SecurityLayer` was read and ruled out. **The leading candidate is that
+the running listener never reloaded**: the licence reboot fell **before** the NLA change, not
+after — an in-session hope that it had served as a free control was **wrong and retracted**.
+**Discriminating test, not run:** set `UserAuthentication = 0`, let the machine reboot (the hourly
+licence shutdown supplies one free), retry the identical failure. Deferred deliberately rather than
+chased at 02:00, because it costs a third failed logon and leaving NLA off overnight is the exact
+shape of Module 06's Finding 5.
+
+**`0xC000006A` is recall, not established.** High confidence it means *account exists, password
+wrong* (vs `0xC0000064`, no such user), and `Failure Reason` deliberately conflates the two so the
+person at the keyboard cannot tell which they got. **The distinction is the whole difference
+between password guessing and username enumeration.** Test, no lockout cost: fail as a nonexistent
+user and compare. Likewise **NTLM-because-IP is a hypothesis** — test by connecting to
+`ws01.corp.local`, or by looking for a **4771** on DC01 (Kerberos pre-auth failures land at the DC;
+NTLM ones do not).
+
+**Traps this sitting added:**
+
+- **`-Name` on `Get-ItemProperty` restricts what comes back.** Selecting a property that was never
+  requested prints a **blank column** — not an error, not an empty value. **"Never retrieved" is
+  indistinguishable from "empty".** Drop `-Name` and read the whole key first.
+- **A misspelled channel *name* errors loudly** (*"There is not an event log on the localhost
+  computer that matches…"*) **while a real channel with no matches is silent**
+  (`NoMatchingEventsFound`). Refines sitting 2's wrong-channel trap: **only a channel that exists
+  can fool you.**
+- **A cap that returns fewer rows than the cap is a complete population.** `-MaxEvents 5` → 3
+  means three exist. The mirror of the filter-first trap, and the one case where a small number is
+  an answer rather than a failure.
+- **A full cap can still give a complete answer** if its oldest row predates your boundary. Check
+  what the window *covers*, not just whether it filled.
+- **Shape is not a field.** A `59,59,59 → 21 → 22` cluster three seconds after a 4625 looked
+  exactly like a session being built for a failed logon — which would have been the finding the
+  step was designed to produce. **`Address: LOCAL` killed it in one read.**
+
+**Unexplained, carried as unknown:** a **4625 at 00:29:46 UTC on 2026-09-29**, three seconds before
+the console logon. **Its fields were never read.** A console mistype is plausible but **not
+established**; if it were instead a third RDP attempt, the lockout count is higher than recorded.
+
+**WS01's Windows 11 evaluation licence is expired and shuts the VM down roughly hourly.** It did so
+**between Steps 8 and 9**. This is the wall CLAUDE.md predicted after DC01 hit it on 2026-09-04,
+and it is now an active constraint on sittings rather than a future one — plan sittings around a
+reboot, and mark boundaries with `(Get-Date).ToUniversalTime()` so a restart does not orphan the
+timeline.
 
 ## How to work on this
 
@@ -653,6 +754,20 @@ commands creating them had never been run.
   **LocalSessionManager**. No error, and the message is identical to a genuine absence. Verified
   2026-09-28 — it nearly produced a finding that Windows does not log RDP disconnects. Add
   "wrong channel" to the empty-output checklist below, next to "wrong machine".
+  **Refined 2026-09-29: only a channel that *exists* can fool you.** A misspelled channel **name**
+  errors loudly — `'…RemoteConectionManager…'` returned *"There is not an event log on the
+  localhost computer that matches…"*. Silence is the signature of a **real** channel with no
+  matching events.
+- **A cap that returns FEWER rows than the cap is a complete population.** `-MaxEvents 5` returning
+  **3** means three exist — the one case where a small number is an answer rather than a failure,
+  and the mirror of the filter-first trap above. A cap that comes back **full** can still give a
+  complete answer *for your window*, if its oldest row predates the boundary you care about. Check
+  what the window **covers**, not just whether it filled.
+- **`-Name` on `Get-ItemProperty` restricts which properties come back.** `Get-ItemProperty -Path
+  … -Name UserAuthentication | Select-Object UserAuthentication, SecurityLayer` printed a **blank
+  `SecurityLayer` column** — not an error, not an empty value. **"Never retrieved" is
+  indistinguishable from "empty".** Read the whole key first, filter second. Verified WS01
+  2026-09-29.
 - **`Select-String` returns match objects, not text.** Piping a DateTime and MatchInfo into one
   stream makes PowerShell fall back to list view and bury the value under `IgnoreCase`,
   `LineNumber`, `Path`, `Pattern`. Use `.Line` or `.Line.Trim()`.

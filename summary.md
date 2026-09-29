@@ -36,7 +36,7 @@ starts from).
 | `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
 | `labs/06-windows-firewall.md` | **Module 06, nearly complete** — written 2026-09-13, four sittings 2026-09-13 → 2026-09-16, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
-| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, Steps 0–7 complete 2026-09-28** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. Includes the NLA controlled experiment and reserves Finding 5 for whichever prediction the run kills — **one is already dead: enabling RDP writes 4947, not the 4946 the sheet predicted** |
+| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, Steps 0–9 complete 2026-09-29** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. **Three of the sheet's own predictions are now dead**: enabling RDP writes 4947 not 4946; a failed RDP logon is **Logon Type 3**, not 10; and turning NLA off changed **nothing** in any of the three logs |
 | `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
@@ -61,7 +61,7 @@ starts from).
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — 3 sittings run, not finished |
-| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947** | 🟡 In progress — Steps 0–7 complete, resume at Step 8 |
+| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | 🟡 In progress — Steps 0–9 done, **all five findings drafted**, resume at Step 10 |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
@@ -369,7 +369,7 @@ Every lab (via the template) is laid out identically:
   2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
   Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
   change. The missing item is the illustration, not the evidence.
-- 🟡 **Module 07 (Remote Desktop) — sittings 1 and 2 complete, Steps 0–7 done (2026-09-28).** Two RDP
+- 🟡 **Module 07 (Remote Desktop) — sittings 1–3 complete, Steps 0–9 done (2026-09-29).** Two RDP
   sessions made from DC01 to WS01, reconstructed across all four logbooks and joined, with the
   access story and its MITRE mapping written (T1021.001, T1078).
 
@@ -411,10 +411,15 @@ Every lab (via the template) is laid out identically:
   `.Line`; the **newest** matching event is not the right event.
 
   **Evidence:** `C:\evidence\07-security.evtx` and `07-lsm.evtx` exported on WS01 before anything
-  could roll. **Six screenshots exist on the Windows machine and none are in `assets/`** —
-  `07-sysmon-config.png`, `07-4947-rules-modified.png`, `07-1149-auth.png`,
-  `07-session-lifecycle.png`, `07-session-attribution.png` (the cleanest single image the module
-  has produced) and the 479-event `Group-Object` breakdown.
+  could roll. **Three screenshots are filed in `assets/`**, each opened and verified against its
+  contents on 2026-09-29: `07-1149-auth.png`, `07-session-attribution.png` (the cleanest single
+  image the module has produced) and `07-session-lifecycle.png` — **two of them renamed from
+  `07-1149-auth.png.png` and `Session-Lifecycle.png`.** The note that said none were filed was
+  stale: **pasting into a chat does not put a file on disk, but a stale note does not prove one is
+  missing — check the directory.** Outstanding: `07-sysmon-config.png`,
+  `07-4947-rules-modified.png` (**Finding 5's first observation has no image behind it**), the
+  479-event `Group-Object` breakdown, and sitting 3's `07-4625-nla-on.png`, `07-nla-comparison.png`
+  and `07-261-listener.png`.
 
   **Unexplained, recorded as observations:** 4624 queries with a 4-hour window that returned
   nothing although the events sat inside it (rotation, rendering and boundary each excluded, no
@@ -423,10 +428,63 @@ Every lab (via the template) is laid out identically:
   from one twelve-minute session, consistent with Module 06's parked rate observation but still not
   measured against a controlled window.
 
-  **Resume at Step 8** — the failed logon. **Steps 8–11 are the last sitting on the VMs**; the
-  Findings section after them is desk work. **Step 9 turns NLA off and must restore
-  `UserAuthentication` to `1`, readback-verified.** `asmith` carries a five-attempt lockout
-  threshold through both steps — `Unlock-ADAccount -Identity asmith` on DC01 is the recovery.
+  **Sitting 3 (2026-09-28 → 2026-09-29) completed Steps 8 and 9 — the failed logon and the NLA
+  experiment — and killed two more of the sheet's predictions.**
+
+  **A refused RDP logon is Logon Type 3, not 10.** One refusal wrote **exactly one 4625**
+  (21:26:35 UTC), against three 4624s for one successful attachment. A rule hunting RDP by
+  **Type 10** catches every success and **misses every failure**. Neither SID resolved
+  (`S-1-0-0` for subject *and* target): a refused logon yields **the string that was typed, never
+  an identity**. And the account arrives with a **fifth spelling** — `asmith@corp.local` with an
+  empty domain, where the successful 4624 said `asmith` + `CORP`, so **the same log spells the
+  same user differently depending on whether they got in**.
+
+  **The sharpest result: no single event can classify the attempt.** Nothing in the 4625 says
+  *RDP* — Type 3, `NtLmSsp`/`NTLM`, Source Port `0` is indistinguishable from a failed SMB or
+  WinRM logon. What identifies it is **261 ("Listener RDP-Tcp received a connection")** in
+  RemoteConnectionManager, 26 seconds earlier — and **261 carries only the listener name**, no
+  user, no address. **The identity-bearing event cannot name the protocol; the protocol-bearing
+  event cannot name the identity.** LocalSessionManager stayed **silent** (no session was ever
+  built) and no **1149** was written. **Candidate finding, seen twice: 261 with no matching 1149
+  is the signature of a refusal.**
+
+  **The silence had its positive control in the same output** — a console-logon cluster 2m40s
+  before the attempt, so the channel proved itself alive without reaching back to Step 6. Two of
+  sitting 2's six unresolved IDs are now closed on the box: **261** as above, and **59** =
+  `RpcGetCurrentSessionCapabilities` (internal RPC chatter, not session activity).
+
+  **The NLA experiment produced a negative result, honestly bounded.** With
+  `UserAuthentication = 0` (readback-verified), the 4625 was **field for field identical**, the
+  session log **untouched**, no 1149, and a **261** 32 s ahead of the failure — the two matrix
+  rows match exactly. Even the *visible* prediction failed: no login screen appeared inside the
+  RDP window. **No cause established.** `SecurityLayer = 2` was read and ruled out as a second
+  gate. The leading candidate is that **the running listener never reloaded** — the licence
+  reboot fell *before* the change, not after, so it was **not** the free control it first looked
+  like. **Discriminating test, not run:** set NLA off, reboot, retry.
+
+  **New traps:** **`-Name` on `Get-ItemProperty` restricts what comes back**, so selecting an
+  unrequested property prints a **blank column** — "never retrieved" is indistinguishable from
+  "empty"; a **misspelled channel name errors loudly** while a real channel with no matches is
+  silent, which refines sitting 2's wrong-channel trap (only a channel that *exists* can fool
+  you); **a cap returning fewer rows than the cap is a complete population**; and **shape is not a
+  field** — a cluster that looked exactly like a session being built for a failed logon was
+  killed in one read by `Address: LOCAL`.
+
+  **Cleanup verified:** `UserAuthentication` back to **`1`** on WS01, and **`asmith` is not
+  locked** (read on DC01), so no analyst-generated 4767 exists to be mistaken for lab noise.
+
+  **WS01's Windows 11 evaluation licence is expired and shuts the VM down roughly hourly** — it
+  did so between Steps 8 and 9. This is now an active constraint on sittings, not a future one.
+
+  **All five findings are now drafted** (2026-09-29) in observation → inference → recommendation
+  form, with an open-questions table carrying seven unsettled items out of the module rather than
+  letting them read as settled. **Finding 5 is "four of this run sheet's own predictions were
+  wrong"** — 4946-vs-4947, the switched-off 4778/4779, the NLA null result, and an expectation
+  that could not fail.
+
+  **Resume at Step 10** — lab-state readbacks, then Step 11's remaining screenshots. **Open and carried forward:** H3's reboot test; the **unidentified 4625 at 00:29:46 UTC
+  on 2026-09-29**, fields never read; `0xC000006A` vs `0xC0000064` (fail as a nonexistent user —
+  no lockout cost); and whether connecting by IP is what forced **NTLM** rather than Kerberos.
 - ⬜ Modules 08–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
   current through **Module 06**, evidence included. Module 07's sitting logs are committed
