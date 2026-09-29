@@ -779,6 +779,222 @@ exact shape of Module 06's Finding 5.
 
 ---
 
+# Run log — Sitting 4 (2026-09-29, Steps 10–11, WS01)
+
+**The sitting opened by discovering that most of what it planned to photograph no longer
+existed**, and everything after that followed from measuring the damage before acting on it.
+
+## The log had rolled, and nobody had checked
+
+The first command of the day was meant to set up a screenshot. It characterised the population
+instead — count, then oldest record — and the oldest came back at **2026-09-28 13:41:34 UTC**
+against **2065** events. The knock the screenshot was supposed to illustrate happened on
+**2026-09-14/16**.
+
+**WS01's Security log holds roughly one day.** Since 5152s are constant background on this host
+and a log file discards oldest-first regardless of event ID, that timestamp is effectively the
+whole channel's horizon.
+
+This **closes Module 06's parked observation 3**, which read *"WS01 wrote 308 × 4688 in 20 minutes
+… not measured properly. If it is real, WS01's Security log fills in about a day."* It is real,
+and the mechanism was measured later the same sitting: **154 × 4688 from one twelve-minute RDP
+session.**
+
+**The run sheet's own command for the missing screenshot would have hidden this.** It read
+`Get-WinEvent … -MaxEvents 20 | Where-Object { $_.Message -like '*9999*' }` — the filter-first
+trap at the top of CLAUDE.md's list. Twenty events is minutes of background noise on this host, so
+that query could not have found the knock even on the day it was written. **Its silence was never
+evidence**, which is the same defect Module 06 named in Finding 5 and then shipped anyway.
+
+## Freezing the evidence before doing anything else
+
+`wevtutil epl Security C:\evidence\0929-security.evtx` — taken **first**, before any capture,
+because an `.evtx` is a frozen snapshot and rotation cannot reach into it. Everything afterwards
+was read at leisure rather than raced.
+
+Then the existing exports were **characterised rather than trusted**:
+
+| File | Covers (UTC) | |
+|---|---|---|
+| `07-security.evtx` | 09:12:54 → 13:52:06, 2026-09-28 | holds the **morning session** |
+| `0929-security.evtx` | ~13:41 2026-09-28 → 2026-09-29 | holds **both 4625s** |
+
+Continuous coverage from 09:12 UTC on 2026-09-28 onward. **`07-4624-type10.png` and the
+479-event breakdown were then recovered from a file the live log had already discarded** — the
+entire payoff for an export taken before anything rolled.
+
+**Permanently lost:** the 4947 burst of 2026-09-25, which predates every export.
+
+## Every 4625 on the box, accounted for
+
+Four in the live log, and the cap was not hit, so that is the complete population.
+
+| Local | UTC | Type | Account | From | |
+|---|---|---|---|---|---|
+| 28/09 22:26:35 | 21:26:35 | **3** | `asmith@corp.local` | `10.0.0.10` | NLA-on refusal |
+| 29/09 01:29:46 | 00:29:46 | **2** | `Administrator@corp.local` | `127.0.0.1` | console mistype |
+| 29/09 01:37:58 | 00:37:58 | **3** | `asmith@corp.local` | `10.0.0.10` | NLA-off refusal |
+| 29/09 09:59:29 | 08:59:29 | **2** | `Administrator@corp.local` | `127.0.0.1` | console mistype |
+
+**This closes the sitting-3 unknown.** The 00:29:46 event was carried as *"fields never read … if
+it were instead a third RDP attempt, the lockout count is higher than recorded."* It is a **Type 2
+console mistype at 127.0.0.1 by Administrator**. `asmith`'s attempt count stands as recorded.
+
+## `FailureReason` resolved on the box
+
+`%%2313` → **"Unknown user name or bad password."** The human-readable field **deliberately
+refuses to say which**, exactly as sitting 3 predicted — and the machine-readable `SubStatus`
+sitting beside it (`0xc000006a`) is the field that would disambiguate.
+
+**So the log tells an analyst who pulls fields by name something it hides from anyone reading
+Event Viewer's General tab.** That is a finding-shaped result and it is now evidenced rather than
+recalled.
+
+`0xC000006A` itself remains **recall, not established** — the discriminating test (fail as a
+nonexistent user, compare against `0xC0000064`) still has not been run.
+
+## Success against failure, field by field
+
+`07-4624-type10.png` and `07-4625-nla-on.png` are the same log, the same two machines, the same
+user, one that got in and one that did not:
+
+| Field | 4624 success | 4625 refusal |
+|---|---|---|
+| `TargetUserSid` | `S-1-5-21-…-1105` | `S-1-0-0` |
+| `TargetUserName` | `asmith` | `asmith@corp.local` |
+| `TargetDomainName` | `CORP` | `-` |
+| **`WorkstationName`** | **`WS01`** | **`DC01`** |
+| `LogonProcessName` | `User32` | `NtLmSsp` |
+| `AuthenticationPackageName` | `Negotiate` | `NTLM` |
+| `ProcessName` | `svchost.exe` | `-` |
+
+**Two of those are new.**
+
+**`WorkstationName` names a different machine depending on whether the logon succeeded** — the
+destination on the 4624, the source on the 4625. Same field, opposite referent. **A hunt that
+correlates success and failure on `WorkstationName` joins the wrong things and reports nothing
+wrong.** Observed directly; the mechanism — client-supplied in the NTLM path, locally filled in
+the interactive path — is **hypothesis, not established**.
+
+**The success authenticated via `Negotiate`, the refusal via `NTLM`.** This bears on the open
+question recorded as *"NTLM-because-IP is a hypothesis"*: if both connections were made by IP,
+then IP alone does not force NTLM and the current explanation is weaker than recorded. **Not
+settled here** — it depends on whether sitting 2's sessions were opened by address or by name,
+which was never written down.
+
+## What a Logon ID is actually for
+
+`$sess = Get-WinEvent -Path …\07-security.evtx | Where-Object { $_.Message -like '*0x4F246D*' }`
+returned **479**, confirming sitting 2 exactly, and `Group-Object Id` broke it down:
+
+| ID | Count | | ID | Count |
+|---|---|---|---|---|
+| 4688 | 154 | process creation | 4690 | 25 |
+| 5379 | 154 | | 4797 | 14 |
+| 4670 | 50 | | 4624 / 4647 | 1 / 1 |
+| 4658 | 50 | | 5058 / 5059 / 5061 | 1 each |
+| 4656 | 27 | | | |
+
+**4688 and 5379 both land on exactly 154**, as do **4670 and 4658 on 50**. Equal counts are
+suggestive of pairing but are **not proof of it** — no timestamp correlation was run. Recorded as
+an observation. Only 4688, 4624, 4647, 4656 and 4670 have their meanings established on this box;
+the rest are recall and must be resolved before entering a finding.
+
+The `-like` match is case-insensitive, which is the only reason the uppercase string in the notes
+finds the **lowercase** `0x4f246d` in the XML. Module 03's lesson, paying off.
+
+## Why four Type 10 logons gave two sessions
+
+The export held **four** Type 10 logons for **two** RDP sessions:
+
+| UTC | |
+|---|---|
+| 09:30:26 | morning session starts — `0x4f246d` |
+| 09:40:54 | morning **reconnect** — **`0x741ee0`** |
+| 12:57:37 | afternoon session starts |
+| 13:00:59 | afternoon **reconnect** |
+
+**The reconnect carries its own Logon ID.** `0x741ee0` is *not* `0x4f246d` — which is why exactly
+**one 4624** appears among the session's 479 events.
+
+**A reconnect does not rejoin the existing logon session; it authenticates as a new one, which is
+torn down the moment the original session is reattached.** Sitting 2 recorded that `0x741ee0` got
+a 4634 nine seconds later; nine seconds after 09:40:54 is **09:41:03**, which is exactly when
+LocalSessionManager logged event **25, reconnected**.
+
+That converts two separate entries in the notes from stated patterns into an explained mechanism:
+**why counting Type 10s over-counts sessions**, and why the `-First 1` trap returned an event
+"indistinguishable from the session" that had already ended.
+
+**Not verified directly:** that the 4634 and the LSM `25` share a timestamp to the second. Two
+separate records agree, but nobody has put them side by side.
+
+## The Sysmon config anomaly — found by reading a screenshot
+
+The Step 10 readback printed:
+
+```
+- NetworkConnect          onmatch: include   combine rules using 'And'
+      DestinationPort         filter: is      value: '9999'
+      DestinationPort         filter: is      value: '3389'
+```
+
+Two conditions on the same field, combined with **And**. Read literally, a packet would have to be
+destined for port 9999 *and* port 3389 simultaneously, which nothing is. Yet sitting 2 recorded
+**11 Event 3s on port 3389** after both ports were present, so the rule demonstrably fires.
+
+**Two explanations survive, with opposite consequences:**
+
+- **H1 — same-field conditions are OR'd** despite the label, and both ports work.
+- **H2 — the last condition wins**, and Step 3.2's edit **silently disabled the 9999 rule** that
+  Module 06's Finding 2 rests on.
+
+**Both fit every observation, because 9999 has not been tested since 3389 was added.** Module 06's
+single Event 3 for 9999 dates from 2026-09-16, nine days before the edit.
+
+**Discriminating test, already scheduled:** Module 06's outstanding `06-5152-listening.png` needs
+a `TcpListener` on DC01 port 9999 anyway. A completed connection to it either produces an Event 3
+or does not.
+
+If H2 holds it is a finding in its own right, and a sharp one: **a config edit that reads as
+additive, applies cleanly, returns `Configuration updated`, and survives a live readback showing
+both values can still have disabled an existing rule.** Every check this lab knows how to run
+passes.
+
+## Traps this sitting added
+
+- **`-FilterXPath` on a live channel returns `NoMatchingEventsFound` while the events are sitting
+  there.** Correct channel name, correct event ID, wrong *filter form* — and the result is
+  byte-identical to a genuine absence. Twelve 261s were present; the query said none. **The most
+  deceptive member of the empty-output family so far**, because both of the things you would
+  normally suspect were right. `-FilterHashtable` on live logs, `-FilterXPath` on exported
+  `.evtx` — the rule was already in CLAUDE.md and was still got wrong in the moment.
+- **A wrong registry key produces the same blank column as a wrong `-Name`.** Asking for
+  `UserAuthentication` on `…\Control\Terminal Server` prints an empty value, not an error — the
+  property lives on `…\WinStations\RDP-Tcp`. **Three causes, one symptom, no error in any of
+  them:** never requested, genuinely empty, wrong key.
+- **`Get-LocalGroupMember` throws error 1789 when the DC is unreachable** — *the trust relationship
+  … failed*, the classic symptom of a broken machine account. The cause here was DC01 being
+  switched off. **A readback can fail for reasons unrelated to the thing being read.**
+- **Wrong syntax shouts; wrong value whispers.** `Id ==261` failed loudly with
+  `CommandNotFoundException`. `Id=46225` returned `NoMatchingEventsFound` — indistinguishable from
+  a real empty result, and the **second** instance of this exact typo class after Module 06's
+  `Id=49466`.
+- **`[xml]` accepts exactly one root element.** `$t10.ToXml()` without an index concatenates every
+  event's XML and fails with *this document already has a DocumentElement node* — which reads like
+  a parser fault rather than a missing subscript.
+
+## Where the sitting stopped
+
+**Step 10 is 5 of 6** — only `Get-LocalGroupMember`, blocked on DC01 being down. **Step 11 is 6 of
+7**, with only `07-4947-rules-modified.png` outstanding and its events permanently gone.
+
+**Module 06's two screenshots were not attempted** — they need both VMs up, and DC01 was off.
+That run now carries three jobs rather than two: `06-5152-ws01-empty.png`,
+`06-5152-listening.png`, and the H1/H2 test above.
+
+---
+
 # Step 0 — Pre-flight (both VMs)
 
 ### 0.0 Close out Module 06 first — and mind the order
@@ -1748,6 +1964,51 @@ service is the problem, not an enabled service.
 Whatever you choose, **read it back and record the value**, rather than recording the command you
 ran.
 
+## Recorded — sitting 4, 2026-09-29
+
+Every value below is command output pasted back, not a setting remembered from when it was made.
+
+| Setting | Value read | Read with |
+|---|---|---|
+| `fDenyTSConnections` | **0** — Remote Desktop **left on** | `Get-ItemProperty` on `…\Control\Terminal Server` |
+| `UserAuthentication` | **1** — NLA on, Step 9.5's restore value holding | `Get-ItemProperty` on `…\WinStations\RDP-Tcp` |
+| `SecurityLayer` | **2** | same read |
+| Sysmon `NetworkConnect` ports | **9999 and 3389** both present — but see the `And` anomaly below | `Sysmon64.exe -c` |
+| Sysmon registry rules | **all four intact** — `CurrentVersion\Run`, `Winlogon\Shell`, `Winlogon\Userinit`, `Image File Execution Options` | same readback |
+| Sysmon build / schema | **v15.15**, `Rule configuration (version 4.90)` | same readback — **closes a sitting-1 unknown** |
+| `Other Logon/Logoff Events` | **Success** | `auditpol` |
+| `Filtering Platform Packet Drop` | **Failure** | `auditpol` |
+| `Filtering Platform Connection` | **Failure** — Success deliberately still off | `auditpol` |
+| `MPSSVC Rule-Level Policy Change` | **Success** | `auditpol` — **re-reads one of the two switches Module 06 left unverified** |
+| `asmith` in `Remote Desktop Users` | **not read** — blocked, see below | `Get-LocalGroupMember` |
+
+**The decision, recorded: RDP is left ON, with NLA on.** An undocumented enabled service is the
+problem, not an enabled one, and Part II's AD modules may want remote access to WS01.
+`Other Logon/Logoff Events` is likewise left at **Success** — it is the only instrument that
+caught the console displacement in sitting 2.
+
+**`Filtering Platform Connection` Success being off is what keeps the log alive.** Measured this
+sitting: WS01's Security log holds roughly **one day**, and a single twelve-minute RDP session
+writes **154 × 4688**. An event per *allowed* connection on top of that would leave a log measured
+in hours. Module 04's warning, with a number behind it.
+
+### The one readback that failed, and why it is not what it looks like
+
+`Get-LocalGroupMember -Group 'Remote Desktop Users'` returned **error 1789** — *the trust
+relationship between this workstation and the primary domain failed.* **DC01 was powered off at
+the time.** `Remote Desktop Users` holds a *domain* account, so WS01 must ask a domain controller
+to resolve the SID to a name; with no DC to ask, the call fails — and it fails with the exact
+error code a genuinely broken machine account produces.
+
+**Hypothesis, not established:** the cause is DC01 being down. The test is to boot DC01 and re-run,
+which has not yet happened. Recorded here rather than assumed, because "the trust is broken" is a
+conclusion that would cost a rebuild.
+
+**The trap generalises: a readback can fail for reasons that have nothing to do with the thing
+being read** — and this one fails loudly, with a message that invites exactly the wrong diagnosis.
+Same family as the wrong-machine and wrong-channel traps, opposite failure mode: those go silent,
+this one shouts something false.
+
 ---
 
 # Step 11 — Evidence for the portfolio
@@ -1770,22 +2031,39 @@ whose host can no longer be established from the image.
   the attribution shot (no user, no address, **no hostname in frame**), but it is the clean
   lifecycle sequence. *(Arrived as `Session-Lifecycle.png` — renamed to the convention.)*
 
+**Filed 2026-09-29 (sitting 4), each opened and checked against its contents before filing:**
+
+- [x] **`07-4625-nla-on.png`** — **Finding 3's headline.** `hostname` → `WS01` in frame, the
+  timestamp printed separately, then the full field table: `LogonType 3`, `SubStatus 0xc000006a`,
+  `Status 0xc000006d`, **both SIDs `S-1-0-0`**, `NtLmSsp` / `NTLM`, `IpAddress 10.0.0.10`,
+  `IpPort 0`, `ProcessName -`. Carries one field no note had recorded: **`WorkstationName: DC01`**
+- [x] **`07-nla-comparison.png`** — all four 4625s in the live log as one table, Time / User /
+  Type / From. The two lab refusals identical apart from the timestamp — NLA on vs NLA off —
+  beside two **Type 2 / 127.0.0.1 / `Administrator@corp.local`** console mistypes. Stronger than
+  the planned two-halves frame: it carries the negative result **and** shows `LogonType`
+  discriminating local from remote *among failures*
+- [x] **`07-261-listener.png`** — the 22:26:09 UTC listener hit, `UserData.EventXML` printing
+  exactly two columns: `xmlns: Event_NS` and **`listenerName: RDP-Tcp`**. The entire event fits in
+  the frame, which is the point — it names nobody
+- [x] **`07-4624-type10.png`** — the interactive session's logon, **recovered from
+  `C:\evidence\07-security.evtx` after the live log had already discarded it.** `TargetLogonId
+  0x4f246d`, `LogonType 10`, `TargetUserSid` resolving to `…-1105`, `LogonProcessName User32`,
+  `AuthenticationPackageName Negotiate`, `WorkstationName WS01`, `ProcessName svchost.exe`
+- [x] **`07-session-breakdown.png`** — `hostname`, `479`, and the full `Group-Object Id` table
+- [x] **`07-sysmon-config.png`** — live `Sysmon64.exe -c`: **v15.15**, **schema 4.90** (closes a
+  sitting-1 unknown), config hash, both ports, all four registry rules. The `combine rules using
+  'And'` anomaly was found by *reading this screenshot*, not by running anything new
+- [x] The access story from Step 7, written out — in this file
+
 **Still outstanding:**
 
-- [ ] `07-sysmon-config.png` — live config readback showing both ports and the registry rules.
-  Recoverable on demand: `Sysmon64.exe -c` re-reads the live config.
-- [ ] `07-4947-rules-modified.png` — the `Remote Desktop` rule table and the 4946/4947/4948 query
-  in one frame. **Finding 5's first observation currently rests on text with no image behind it.**
-- [ ] `07-4624-type10.png` — the logon, with Logon Type 10, source address and Logon ID visible
-- [ ] `07-4625-nla-on.png` — the failed logon with NLA on, Logon Type **3** and the Sub Status
-  visible. **Finding 3's headline.** Recoverable — the event is still in the log.
-- [ ] `07-nla-comparison.png` — the two halves of the Step 9 matrix
-- [ ] `07-261-listener.png` — the 261 and its `EventXML` showing **only** `RDP-Tcp`. Supports
-  Finding 3's "the protocol-bearing event cannot name the identity".
-- [ ] The Step 5 `Group-Object` breakdown of the 479 events
-- [x] The access story from Step 7, written out — in this file
-- [ ] **Module 06's `06-5152-ws01-empty.png`** — confirmed absent from `assets/` on 2026-09-29;
-  Module 06 cannot be called complete without it
+- [ ] `07-4947-rules-modified.png` — **the 4947s themselves are gone.** WS01's Security log holds
+  roughly one day (measured 2026-09-29) and the burst was 2026-09-25. The `Remote Desktop` rule
+  table still re-reads on demand; the 4947 half can only be **regenerated**, by disabling and
+  re-enabling the rules — which would also test whether **seven 4947s for three rules**
+  reproduces. **Finding 5's first observation still has no image behind it.**
+- [ ] **Module 06's `06-5152-ws01-empty.png` and `06-5152-listening.png`** — both outstanding;
+  see that module's own checklist, not this one
 
 > **The notes said "six screenshots exist on the Windows machine and none are in `assets/`."
 > Three were already there, two under wrong filenames.** Pasting a screenshot into a chat does not

@@ -977,6 +977,23 @@ Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} -MaxEvents 20 | Whe
 > trap, where hunting `*Notepad.exe*` returned `reg.exe`. It is deliberately a wide net here:
 > if a loose search finds nothing, a precise one certainly will not.
 
+> ⚠️ **CORRECTION, 2026-09-29 — `-MaxEvents 20` makes this query incapable of finding the
+> knock.** The cap is applied **before** `Where-Object`, so it takes the twenty newest events
+> and only then looks for 9999. WS01 holds over a thousand 5152s generated continuously by
+> background traffic, so twenty events is **minutes** of log — and the knock was hours old when
+> this was first run. **Its silence was never evidence**, which is precisely the defect Finding 5
+> names elsewhere in this module. The `-like` reasoning above is sound; the cap is not.
+>
+> **Use the uncapped form**, which scans the whole population and is the one that makes the
+> screenshot mean something:
+>
+> ```powershell
+> Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152} | Where-Object { $_.Message -like '*9999*' }
+> ```
+>
+> This is CLAUDE.md's **filter-first trap**, top of its list, reproduced inside a run sheet that
+> documents the trap. **Knowing a trap and not applying it in the moment are different skills.**
+
 **Verified 2026-09-15: nothing for 9999**, against 1040 events proving the instrument records.
 WS01 *sent* the connection and its outbound default is allow, so nothing was blocked and
 nothing was logged. The refusal happened a metre away, on another machine.
@@ -1006,6 +1023,18 @@ Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4688; StartTime=(Get-Date
 > than boot noise, but **neither window was controlled for a reboot**, so this is recorded as
 > an open question, not a measurement. If the rate is real, WS01's 20 MB Security log fills in
 > roughly a day — against Module 04's measured ~0.26 MB/day in August.
+>
+> **CLOSED 2026-09-29 — the rate is real and the prediction was right.** On that date WS01's
+> Security log held **2065** 5152 events whose oldest was **2026-09-28 13:41:34 UTC**: the log
+> covers **roughly one day**, exactly as predicted here. The mechanism was measured the same
+> day from Module 07's evidence — **154 × 4688 from a single twelve-minute RDP session**. The
+> reboot objection is answered: this horizon was measured across a window containing ordinary
+> use, not a boot burst.
+>
+> **The cost landed on this module.** The knock these steps describe, made 2026-09-14/16, had
+> already been discarded by 2026-09-29, and `06-5152-ws01-empty.png` could no longer be taken
+> as originally specified. **A log that rotates in a day turns "recoverable later" into a
+> deadline nobody wrote down.**
 
 Now look for the knock:
 
@@ -1321,10 +1350,18 @@ In `../assets/`, spaceless `06-*` names:
       rests on the 2026-09-16 run (three unanswered knocks → 0 Event 3s against 373 Event 1s), and
       the count was independently confirmed still **1** on 2026-09-25 before the config change.
       **The missing item is the illustration, not the evidence.** Not an open task
-- [ ] `06-5152-ws01-empty.png` — on WS01, the count of **1040** 5152 events beside the
-      `9999` filter returning nothing. The instrument demonstrably alive and demonstrably
-      silent about the knock, in one frame. (Replaces the planned `06-5157-ws01-empty.png`;
-      5152 is the channel that matters and the one that was actually enabled there)
+- [ ] `06-5152-ws01-empty.png` — on WS01, the 5152 count beside the `9999` filter returning
+      nothing. The instrument demonstrably alive and demonstrably silent about the knock, in one
+      frame. (Replaces the planned `06-5157-ws01-empty.png`; 5152 is the channel that matters and
+      the one that was actually enabled there.)
+      ⚠️ **Re-scoped 2026-09-29. The recorded count of 1040 is gone and so is the knock.** WS01's
+      Security log was measured that day at **2065** events reaching back only to **2026-09-28
+      13:41 UTC** — a one-day horizon. The 2026-09-14/16 knock has been discarded.
+      **What the frame can now show** is a fresh knock plus the live count, with `hostname` at the
+      top **and the oldest record's timestamp in the frame**, so the image states the window it
+      covers rather than implying one it does not. **Use the uncapped query** — see the correction
+      at Step 7.1; the run sheet's original `-MaxEvents 20` form cannot find a knock older than a
+      few minutes.
 
 Then, in your own words: who probed what, how you know, and — the harder half — **what none of
 the four instruments could have told you**, which is the module's actual result.
@@ -1622,6 +1659,22 @@ is v15.15 / schema 4.90 on one host.
    and the honest statement in a report is "source host `10.0.0.20`, process unknown".
 5. **Follow-up test to run:** a probe against a port that returns RST rather than being
    stealth-dropped, to discriminate the two mechanisms named above.
+
+> ⚠️ **Open since 2026-09-29: the instrument behind this finding's positive half may no longer
+> be armed.** Module 07 Step 3.2 added port 3389 to the same Sysmon `NetworkConnect` group, and
+> the live readback on 2026-09-29 shows the two `DestinationPort` conditions **combined with
+> `And`** — a relation nothing can satisfy if read literally. Port 3389 demonstrably still
+> matches (11 Event 3s in Module 07 sitting 2), so the conditions cannot be strictly ANDed;
+> but **whether 9999 still matches has not been tested since the edit.** This finding's single
+> Event 3 for 9999 dates from **2026-09-16**, nine days before it.
+>
+> **H1** — same-field conditions are OR'd despite the label, and nothing has changed.
+> **H2** — the last condition wins, and the 9999 rule has been silently disabled.
+>
+> Both fit every observation to date. **The discriminating test is already scheduled**: a
+> `TcpListener` on DC01 port 9999 is needed for `06-5152-listening.png` regardless, and a
+> completed connection to it either produces an Event 3 or does not. **Nothing in this finding
+> changes either way** — it rests on the 2026-09-16 run — but the *ability to reproduce it* does.
 
 ---
 

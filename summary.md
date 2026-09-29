@@ -60,8 +60,8 @@ starts from).
 | 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
-| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — four sittings + closeout; **2 screenshots left** |
-| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | 🟡 In progress — Steps 0–9 done, **all five findings drafted**, resume at Step 10 |
+| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — four sittings + two closeouts; **2 screenshots left, both need DC01** |
+| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | 🟡 In progress — four sittings; findings written, **9 screenshots filed**, Step 10 at **5 of 6** (last row needs DC01) |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
@@ -371,7 +371,7 @@ Every lab (via the template) is laid out identically:
   2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
   Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
   change. The missing item is the illustration, not the evidence.
-- 🟡 **Module 07 (Remote Desktop) — sittings 1–3 complete, Steps 0–9 done (2026-09-29).** Two RDP
+- 🟡 **Module 07 (Remote Desktop) — sittings 1–4 complete, Steps 0–11 bar one readback and one screenshot (2026-09-29).** Two RDP
   sessions made from DC01 to WS01, reconstructed across all four logbooks and joined, with the
   access story and its MITRE mapping written (T1021.001, T1078).
 
@@ -487,10 +487,34 @@ Every lab (via the template) is laid out identically:
   **Resume at Step 10** — lab-state readbacks, then Step 11's remaining screenshots. **Open and carried forward:** H3's reboot test; the **unidentified 4625 at 00:29:46 UTC
   on 2026-09-29**, fields never read; `0xC000006A` vs `0xC0000064` (fail as a nonexistent user —
   no lockout cost); and whether connecting by IP is what forced **NTLM** rather than Kerberos.
+- 🟡 **Sitting 4 (2026-09-29) — Steps 10 and 11, WS01 only.** DC01 was off, which is the only
+  reason anything remains. **The opening command destroyed the sitting's own plan and that was
+  the result:** WS01's Security log was measured at a **one-day horizon** (2065 × 5152, oldest
+  2026-09-28 13:41:34 UTC), so the 2026-09-14/16 knock and the 2026-09-25 4947 burst were
+  **already gone** — both recorded in their checklists as *"recoverable."* This **closes Module
+  06's parked "not measured properly" observation** and confirms its prediction; the mechanism was
+  measured the same day at **154 × 4688 per twelve-minute session**. An `.evtx` was exported
+  immediately, and `07-4624-type10.png` plus the 479-event breakdown were then **recovered from a
+  file the live log had already discarded**. **Nine screenshots filed**, each opened and checked
+  against its contents. **Results:** all four 4625s on the box accounted for — two lab refusals and
+  **two Type 2 console mistypes**, which **closes the sitting-3 unknown** and leaves `asmith`'s
+  attempt count as recorded; **`%%2313` resolved on the box** to *"Unknown user name or bad
+  password"*, so the human-readable field **deliberately conflates** what `SubStatus` beside it
+  would disambiguate; **`WorkstationName` names the destination on a 4624 and the source on a
+  4625**, breaking naive success↔failure joins; the success used **`Negotiate`** where the refusal
+  used **`NTLM`**, which weakens the recorded NTLM-because-IP explanation; and **a reconnect gets
+  its own Logon ID** (`0x741ee0`, torn down at reattach), which explains both the Type 10
+  over-count and sitting 2's `-First 1` trap. **One anomaly, found by reading a screenshot rather
+  than running anything:** Sysmon's two `DestinationPort` conditions are **combined with `And`** —
+  see H1/H2 in the next-sitting checklist. **Four new traps:** `-FilterXPath` on a *live* channel
+  returns `NoMatchingEventsFound` while the events sit there; a wrong registry key gives the same
+  blank column as a wrong `-Name`; `Get-LocalGroupMember` throws **1789** when the DC is down;
+  `[xml]` on an un-indexed array fails with a message that reads like a parser fault.
 - ⬜ Modules 08–12 planned but not yet expanded
-- ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — `main` is
-  current through **Module 06**, evidence included. Module 07's sitting logs are committed
-  locally and **not pushed**. Read `git log origin/main..main` rather than trusting this line
+- ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — **`main` was level
+  with `origin/main` at `c5f1c39` on 2026-09-29**, including Module 07's sittings 1–3. The earlier
+  "committed locally and not pushed" note was **stale**. Read `git log origin/main..main` rather
+  than trusting this line either way
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
 - ✅ Module 04 evidence complete: eight PNGs in `assets/`, all three custom views built and
   exported to `assets/xml/` (the reusable deliverable)
@@ -529,88 +553,106 @@ Modules 01/04/05 is sound and needs no change.
 
 ### 🚩 The next sitting, in order
 
-**One sitting on the VMs takes Modules 06 and 07 both to ✅.** Verified against the two lab files'
-own checklists on 2026-09-29 — **not** against the status notes, which were undercounting.
+**One short run with BOTH VMs up closes Modules 06 and 07.** Rewritten 2026-09-29 after sitting 4,
+which completed Module 07's Step 10 bar one row and filed six screenshots. Verified against the two
+lab files' own checklists, not against status notes.
 
-**A. Module 06 — two screenshots (WS01, then DC01)**
+**DC01 must be powered on.** Sitting 4 ran WS01-only because it was off, and that is the only
+reason anything is left.
 
-1. **`06-5152-ws01-empty.png`** — on **WS01**. The 5152 **count** beside the same query filtered
-   to port **9999** returning nothing: the instrument demonstrably alive and demonstrably silent,
-   in one frame, with `hostname` at the top. The checklist records the count as **1040** from
-   2026-09-16; two weeks on it will differ. **Note the recapture date rather than swapping the
-   figure in the finding.**
-2. **`06-5152-listening.png`** — on **DC01**. ⚠️ **This was missing from every status note**
-   (`CLAUDE.md`, `summary.md`, README all said Module 06 was one screenshot away; its own
-   checklist has always had three unticked). The 5152 written *after* the `TcpListener` was
-   started — `Filter Origin: Query User Default`, `Application Name: powershell.exe` — plus the
-   now-populated `pfirewall.log`. **Its pair with `06-5152-stealth.png` is Finding 4**, so Finding
-   4 is currently half-illustrated.
-   **Check first whether the 2026-09-15/16 event is still in DC01's Security log.** If it has
-   rolled, recovering it means re-running matrix row 3: `TcpListener` on DC01, a readback-verified
-   inbound allow rule, one knock from WS01 — then delete the rule and **confirm by readback**
-   (Finding 5 already has three instances of a `Remove-` that ran not being a rule that is gone).
-3. **`06-sysmon3-zero.png` is permanently unobtainable** — Module 07 Step 3.2 added 3389 to the
-   Sysmon config. Now marked as dropped in the checklist rather than left unticked.
+**A. The `TcpListener` run (both VMs) — the last outstanding lab work in either module**
 
-**B. Module 07 — Step 10 readbacks (WS01)**
+Three knocks, one setup, because the matrix rows differ:
 
-Read each value back; record the value, never the command:
-
-| Setting | Expect | Read with |
+| | Setup on DC01 | Gives |
 |---|---|---|
-| `fDenyTSConnections` | **decision required** — see below | registry |
-| `UserAuthentication` | `1` | ✅ **already done 2026-09-29** |
-| `asmith` in `Remote Desktop Users` | present | `Get-LocalGroupMember` |
-| Sysmon `NetworkConnect` ports | **9999 and 3389** | `Sysmon64.exe -c` |
-| Sysmon **registry** rules | **untouched** — Modules 03 and 06 depend on them | same readback |
-| Module 06 audit switches | unchanged | `auditpol` |
+| **1** | nothing | WS01 logs nothing about its own outbound knock → **`06-5152-ws01-empty.png`** |
+| **2** | `TcpListener` + **allow** rule | the connection completes → **does Sysmon log Event 3 for 9999?** |
+| **3** | `TcpListener` + **block** rule | 5152 reads `Query User Default` / `powershell.exe` → **`06-5152-listening.png`** |
 
-**The decision:** Step 10 leaves RDP's on/off state as the analyst's call. The sheet recommends
-**leaving it on with NLA on and writing it down** — an *undocumented* enabled service is the
-problem, not an enabled one. Also leave **`Other Logon/Logoff Events` = Success** on; it is the
-only instrument that caught the console displacement.
+**Knock 3 needs a BLOCK rule, not an allow rule.** Matrix row 3 is *something listening **and** a
+block rule* — that combination is what moves `Filter Origin` off `Stealth` and puts a process name
+in the event. An allow rule produces the wrong frame.
 
-**C. Module 07 — six screenshots (WS01)**
+For knock 1, **use the uncapped query**. The run sheet's own `-MaxEvents 20 | Where-Object` form is
+the filter-first trap and cannot find a knock more than a few minutes old; a correction is now
+written into Step 7.1. Put `hostname` **and the oldest record's timestamp** in the frame, so the
+image states the window it covers.
 
-Ranked by what they actually hold up. `hostname` at the top of every frame.
+Delete every rule afterwards **with a readback** — Finding 5 has three instances of a `Remove-`
+that ran not being a rule that is gone.
 
-1. **`07-4625-nla-on.png`** — **Finding 3's headline.** Logon Type **3** and the Sub Status in
-   frame. The event is still in the log.
-2. **`07-4947-rules-modified.png`** — the `Remote Desktop` rule table plus the 4946/4947/4948
-   query in one frame. **Finding 5's first observation currently has no image behind it.**
-3. **`07-261-listener.png`** — the 261 and its `EventXML` showing **only** `RDP-Tcp`. Holds up
-   "the protocol-bearing event cannot name the identity".
-4. `07-nla-comparison.png` — the two halves of the Step 9 matrix.
-5. `07-sysmon-config.png` — re-reads on demand.
-6. `07-4624-type10.png`, and the Step 5 `Group-Object` breakdown of the 479 events.
+**⚠️ What knock 2 settles.** Module 07 Step 3.2 added port 3389 to the same Sysmon `NetworkConnect`
+group. The 2026-09-29 live readback shows both `DestinationPort` conditions **combined with `And`**
+— unsatisfiable read literally. Port 3389 demonstrably still matches, so they cannot be strictly
+ANDed; but **9999 has not been tested since the edit**, and Module 06's only Event 3 for it predates
+the edit by nine days.
 
-**Already filed and verified against their contents** (2026-09-29): `07-1149-auth.png`,
-`07-session-attribution.png`, `07-session-lifecycle.png`. Two of the three arrived under wrong
-filenames — **check `assets/` on disk, never a note that claims something is missing.**
+- **H1** — same-field conditions are OR'd despite the label; nothing has changed.
+- **H2** — the last condition wins, and the 9999 rule was **silently disabled** by an edit that
+  looked purely additive.
+
+If H2 holds it is a finding in its own right: *a config edit that applies cleanly, returns
+`Configuration updated`, and passes a live readback showing both values can still have disabled an
+existing rule.* Every check this lab knows how to run passes either way.
+
+**B. Module 07 Step 10 — one row left (WS01)**
+
+```
+Get-LocalGroupMember -Group 'Remote Desktop Users'
+```
+
+Expect `CORP\asmith`, `PrincipalSource: ActiveDirectory`. It **failed with error 1789** on
+2026-09-29 — *the trust relationship … failed* — because **DC01 was powered off** and the group
+holds a domain account whose SID needs a DC to resolve. Expected to pass once DC01 is up; if it
+does not, that is a real problem rather than a side effect.
+
+Everything else in Step 10 is read and recorded: `fDenyTSConnections` **0**, `UserAuthentication`
+**1**, `SecurityLayer` **2**, Sysmon v15.15 / schema 4.90 with both ports and all four registry
+rules, and all four audit switches. **The decision is recorded: RDP stays on, with NLA on.**
+
+**C. Module 07 screenshots — nine filed, one outstanding**
+
+`07-4947-rules-modified.png` — **its events are permanently gone.** WS01's Security log holds
+roughly a day and the 4947 burst was 2026-09-25. The `Remote Desktop` rule table still re-reads;
+the 4947 half can only be **regenerated** by disabling and re-enabling those rules, which would
+also test whether **seven 4947s for three rules** reproduces. Optional. Finding 5's first
+observation has no image behind it either way.
 
 **D. Cheap experiments that would upgrade a finding — optional**
 
-- **NLA off → reboot → retry the identical failure.** Settles Finding 3's leading candidate
-  (the listener never reloaded). The hourly licence shutdown supplies the reboot free.
-- **Fail as a nonexistent user**, compare the Sub Status against `0xC000006A`. No lockout cost,
-  and it settles password-guessing vs username-enumeration.
+- **NLA off → reboot → retry the identical failure.** Settles Finding 3's leading candidate (the
+  listener never reloaded). WS01's hourly licence shutdown supplies the reboot free.
+- **Fail as a nonexistent user**, compare the Sub Status against `0xC000006A`. No lockout cost, and
+  it settles password-guessing vs username-enumeration. **`FailureReason` is now known to conflate
+  the two deliberately** (`%%2313` = "Unknown user name or bad password"), which makes the
+  `SubStatus` distinction the whole answer.
 
-**E. Desk work, no VM needed**
+**E. Desk work**
 
-- Decide on `C:\evidence\07-security.evtx` and `07-lsm.evtx` — on WS01, not in the repo.
+- **Commit and push.** `main` was level with `origin/main` at `c5f1c39` on 2026-09-29 — the earlier
+  "commits are stacked up unpushed" line was **stale**. Review screenshots before publishing; the
+  repo is public.
+- Decide on the `.evtx` files on WS01: `07-security.evtx`, `07-lsm.evtx`, `0929-security.evtx`, and
+  a fourth dated **2026-08-25** that is **unidentified**. None are in the repo.
 - Optionally file the 2026-09-15 `Test-NetConnection` capture as Module 06 evidence — Finding 2's
   ground truth, and it identifies its own host via `SourceAddress : 10.0.0.20`.
-- **Push.** Commits are stacked up unpushed and **the repo is public** — review the screenshots
-  for anything beyond the documented lab names before publishing.
+
+**The lesson sitting 4 paid for, and it outranks the checklist:** **"recoverable later" is a
+deadline nobody wrote down.** Screenshots recorded as *"recoverable — the event is still in the
+log"* were, for Module 06's knock and Module 07's 4947 burst, already gone. **Export an `.evtx`
+first, then photograph at leisure** — that is what made the Type 10 logon and the 479-event
+breakdown recoverable at all.
 
 ---
 
 1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
    Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
    were never captured. Module 03 is otherwise complete.
-2. 🚩 **NEXT SESSION — one sitting on the VMs closes BOTH Module 06 and Module 07.**
-   Full checklist below under **"The next sitting, in order"**. Everything else in both modules is
-   done: all findings written, lab work complete, state readback-verified.
+2. 🚩 **NEXT SESSION — one short run with BOTH VMs up closes Module 06 and Module 07.**
+   Full checklist above under **"The next sitting, in order"**. After sitting 4 (2026-09-29) the
+   only outstanding lab work is the `TcpListener` run, which needs DC01 powered on — that is also
+   what blocks Module 07's last Step 10 row and settles the Sysmon `And` question.
 
 2b. **Optional follow-up experiments Module 06 named but did not run**, each written into the
    findings as an open question rather than glossed: (i) probe a port that returns **RST**
