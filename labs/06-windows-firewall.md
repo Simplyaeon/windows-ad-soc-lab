@@ -1300,18 +1300,27 @@ In `../assets/`, spaceless `06-*` names:
       `Get-NetFirewallPortFilter` (`Protocol: TCP`, `LocalPort: 9999`, `RemotePort: Any`), the
       proof that row 2 of the matrix had a correct rule. The same frame timestamps the knock:
       `$ps.TimeCreated` = **10:23:21 local / 09:23:21 UTC, 2026-09-14**
-- [ ] `06-5152-listening.png` — the 5152 after the listener was started, showing
-      `Filter Origin: Query User Default` and `Application Name: powershell.exe`, plus the
-      now-populated text file. **The pair with `06-5152-stealth.png` is Finding 4**
+- [ ] `06-5152-listening.png` — **OUTSTANDING, on DC01.** The 5152 after the listener was
+      started, showing `Filter Origin: Query User Default` and `Application Name: powershell.exe`,
+      plus the now-populated text file. **The pair with `06-5152-stealth.png` is Finding 4**, which
+      is therefore half-illustrated. ⚠️ **Every status note omitted this until 2026-09-29** and
+      claimed Module 06 was one screenshot away. **Check first whether the 2026-09-15/16 event is
+      still in DC01's Security log**; if it has rolled, recovering it means re-running matrix row 3
+      (`TcpListener` + readback-verified inbound allow rule on DC01, one knock from WS01) and then
+      deleting the rule **with a readback**
 - [x] `06-sysmon-attribution.png` — **captured 2026-09-16.** Sysmon **Event 3** fields pulled
       by name for the connection that **completed**: `UtcTime 2026-09-15 23:09:13.841`,
       `Image …\powershell.exe`, **`User CORP\Administrator`**, `SourceHostname WS01.corp.local`,
       `DestinationHostname DC01`, `DestinationPort 9999`, `Initiated true`, `ProcessGuid`.
       **Finding 2's positive half** — what attribution looks like when it is available at all
-- [ ] `06-sysmon3-zero.png` — the same Event 3 count returning **0** for the three unanswered
-      knocks, beside the `Group-Object Id` output showing **373 Event 1s** in the same window.
-      **Finding 2's negative half, and it needs its control in the same frame** — the count
-      alone proves nothing without the evidence that Sysmon was recording
+- [✖] `06-sysmon3-zero.png` — **DROPPED, permanently unobtainable.** Would have shown the Event 3
+      count returning **0** for the three unanswered knocks beside the `Group-Object Id` output
+      showing **373 Event 1s** in the same window. Deliberately skipped on 2026-09-25 to avoid
+      holding up Module 07; **Module 07 Step 3.2 then added port 3389 to the Sysmon config, so the
+      zero state can no longer be re-derived.** The underlying result is unaffected — Finding 2
+      rests on the 2026-09-16 run (three unanswered knocks → 0 Event 3s against 373 Event 1s), and
+      the count was independently confirmed still **1** on 2026-09-25 before the config change.
+      **The missing item is the illustration, not the evidence.** Not an open task
 - [ ] `06-5152-ws01-empty.png` — on WS01, the count of **1040** 5152 events beside the
       `9999` filter returning nothing. The instrument demonstrably alive and demonstrably
       silent about the knock, in one frame. (Replaces the planned `06-5157-ws01-empty.png`;

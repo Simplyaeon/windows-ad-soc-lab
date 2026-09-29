@@ -35,6 +35,31 @@ rather than trying to inspect anything directly.
 
 ## Where things stand
 
+### 🚩 START HERE — the next sitting (set 2026-09-29)
+
+**One sitting on the VMs takes Modules 06 and 07 both to ✅.** All lab work and every finding in
+both modules is **done**. What remains is screenshots, six readbacks and one decision.
+
+**The full ordered checklist is in `summary.md` under "The next sitting, in order"** — read it
+before proposing anything. In brief:
+
+| | On | What |
+|---|---|---|
+| **A** | WS01, then DC01 | Module 06's **two** remaining screenshots: `06-5152-ws01-empty.png` and **`06-5152-listening.png`** (the second was missing from every status note until 2026-09-29) |
+| **B** | WS01 | Module 07 **Step 10** — six readbacks, one of them already done, plus the leave-RDP-on decision |
+| **C** | WS01 | Module 07's **six** remaining screenshots, `07-4625-nla-on.png` first — it is Finding 3's headline and has no image behind it |
+| **D** | both | Optional: NLA off → **reboot** → retry (settles Finding 3's open question), and fail as a nonexistent user (settles `0xC000006A`) |
+| **E** | desk | README/status upkeep, the two `.evtx` on WS01, and **push** — commits are stacked up and the repo is public |
+
+**Two lessons from the 2026-09-29 audit that produced this list, and they generalise:**
+
+1. **A rolled-up status line is not an inventory.** This file, `summary.md` and the README all
+   said Module 06 was *one* screenshot away while its own checklist had **three** unticked boxes.
+   **Count the checklist, not the summary.**
+2. **Check `assets/` on disk before recording an absence.** Three Module 07 screenshots were
+   already filed while every note said none were — two under wrong filenames
+   (`07-1149-auth.png.png`, `Session-Lifecycle.png`, both now renamed).
+
 **Read `summary.md` first** — it carries the current status, the per-module findings, and
 the next steps, and is the file to update as modules complete. Modules 00–05 are complete
 with findings written and evidence in `assets/`; `main` is pushed through **Module 06** —
@@ -331,9 +356,26 @@ config, so the re-derivation described above is **no longer available** and the 
 Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
 change. The missing item is the illustration, not the evidence.
 
-**What is left to finish Module 06 — one screenshot, `06-5152-ws01-empty.png`.** The six `Get-NetFirewallProfile`
-readbacks were taken on **2026-09-25** and the Step 8 table is now fully populated from command
-output on both VMs. Remaining: `06-5152-ws01-empty.png` only.
+**What is left to finish Module 06 — TWO capturable screenshots, not one.** The six
+`Get-NetFirewallProfile` readbacks were taken on **2026-09-25** and the Step 8 table is fully
+populated from command output on both VMs. Remaining:
+
+1. **`06-5152-ws01-empty.png`** — WS01, the 5152 count beside the port-9999 filter returning
+   nothing. The recorded count of **1040** is from 2026-09-16 and will not reproduce; note the
+   recapture date rather than swapping the figure in the finding.
+2. **`06-5152-listening.png`** — DC01, the 5152 after the `TcpListener` started
+   (`Filter Origin: Query User Default`, `Application Name: powershell.exe`) plus the populated
+   `pfirewall.log`. **Its pair with `06-5152-stealth.png` is Finding 4.**
+
+⚠️ **Item 2 was missing from every status note until 2026-09-29** — this file, `summary.md` and
+the README all said Module 06 was *one* screenshot away, while `labs/06-windows-firewall.md`'s own
+checklist had **three** unticked boxes the whole time. **A rolled-up status line is not an
+inventory. Count the checklist, and check `assets/` on disk.** Same failure as the Module 07
+screenshots that were recorded as "none filed" while three were already on disk under two wrong
+filenames.
+
+`06-sysmon3-zero.png` is **permanently unobtainable** and is now marked dropped in the checklist
+rather than left unticked.
 
 **The 2026-09-25 readbacks closed three open unknowns.** `LogBlocked` **survived the
 2026-09-16 reboot** on both machines, each on its own active profile only (`Domain` for WS01,

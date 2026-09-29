@@ -60,7 +60,7 @@ starts from).
 | 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
-| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — 3 sittings run, not finished |
+| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — four sittings + closeout; **2 screenshots left** |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | 🟡 In progress — Steps 0–9 done, **all five findings drafted**, resume at Step 10 |
 
 ### Part II — Active Directory
@@ -253,7 +253,9 @@ Every lab (via the template) is laid out identically:
   sheet is rewritten from the run, **all five findings are complete** (observation → inference
   → recommendation), and **ten screenshots are filed in `assets/`**. A closeout sitting on
   **2026-09-25** filled the Step 8 baseline table from command output on both VMs, so the only
-  thing outstanding is **two screenshots** (`06-5152-ws01-empty.png`, `06-sysmon3-zero.png`).
+  thing outstanding is **three screenshots** (`06-5152-ws01-empty.png`, **`06-5152-listening.png`**
+  — missed by every status note until 2026-09-29 — and `06-sysmon3-zero.png`, which is permanently
+  unobtainable).
 
   **The module's thesis was wrong, and disproving it is the result.** It was built on "the
   text file is thin, event 5157 is rich." Three TCP knocks from WS01 to DC01 port 9999 —
@@ -361,7 +363,7 @@ Every lab (via the template) is laid out identically:
   `BlockInbound,AllowOutbound` already on record. And **`LogFileName` is stored as a literal
   `%systemroot%\...`**, which PowerShell does not expand.
 
-  **Left to finish:** one screenshot — `06-5152-ws01-empty.png` (the 1040-count beside the empty
+  **Left to finish:** two capturable screenshots — `06-5152-ws01-empty.png` (the 1040-count beside the empty
   `9999` filter). **`06-sysmon3-zero.png` was deliberately not captured** — a decision by the user on
   2026-09-25, to avoid holding up Module 07. Module 07 Step 3.2 then added port 3389 to the Sysmon
   config, so the re-derivation described above is **no longer available** and the screenshot is
@@ -525,31 +527,91 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
+### 🚩 The next sitting, in order
+
+**One sitting on the VMs takes Modules 06 and 07 both to ✅.** Verified against the two lab files'
+own checklists on 2026-09-29 — **not** against the status notes, which were undercounting.
+
+**A. Module 06 — two screenshots (WS01, then DC01)**
+
+1. **`06-5152-ws01-empty.png`** — on **WS01**. The 5152 **count** beside the same query filtered
+   to port **9999** returning nothing: the instrument demonstrably alive and demonstrably silent,
+   in one frame, with `hostname` at the top. The checklist records the count as **1040** from
+   2026-09-16; two weeks on it will differ. **Note the recapture date rather than swapping the
+   figure in the finding.**
+2. **`06-5152-listening.png`** — on **DC01**. ⚠️ **This was missing from every status note**
+   (`CLAUDE.md`, `summary.md`, README all said Module 06 was one screenshot away; its own
+   checklist has always had three unticked). The 5152 written *after* the `TcpListener` was
+   started — `Filter Origin: Query User Default`, `Application Name: powershell.exe` — plus the
+   now-populated `pfirewall.log`. **Its pair with `06-5152-stealth.png` is Finding 4**, so Finding
+   4 is currently half-illustrated.
+   **Check first whether the 2026-09-15/16 event is still in DC01's Security log.** If it has
+   rolled, recovering it means re-running matrix row 3: `TcpListener` on DC01, a readback-verified
+   inbound allow rule, one knock from WS01 — then delete the rule and **confirm by readback**
+   (Finding 5 already has three instances of a `Remove-` that ran not being a rule that is gone).
+3. **`06-sysmon3-zero.png` is permanently unobtainable** — Module 07 Step 3.2 added 3389 to the
+   Sysmon config. Now marked as dropped in the checklist rather than left unticked.
+
+**B. Module 07 — Step 10 readbacks (WS01)**
+
+Read each value back; record the value, never the command:
+
+| Setting | Expect | Read with |
+|---|---|---|
+| `fDenyTSConnections` | **decision required** — see below | registry |
+| `UserAuthentication` | `1` | ✅ **already done 2026-09-29** |
+| `asmith` in `Remote Desktop Users` | present | `Get-LocalGroupMember` |
+| Sysmon `NetworkConnect` ports | **9999 and 3389** | `Sysmon64.exe -c` |
+| Sysmon **registry** rules | **untouched** — Modules 03 and 06 depend on them | same readback |
+| Module 06 audit switches | unchanged | `auditpol` |
+
+**The decision:** Step 10 leaves RDP's on/off state as the analyst's call. The sheet recommends
+**leaving it on with NLA on and writing it down** — an *undocumented* enabled service is the
+problem, not an enabled one. Also leave **`Other Logon/Logoff Events` = Success** on; it is the
+only instrument that caught the console displacement.
+
+**C. Module 07 — six screenshots (WS01)**
+
+Ranked by what they actually hold up. `hostname` at the top of every frame.
+
+1. **`07-4625-nla-on.png`** — **Finding 3's headline.** Logon Type **3** and the Sub Status in
+   frame. The event is still in the log.
+2. **`07-4947-rules-modified.png`** — the `Remote Desktop` rule table plus the 4946/4947/4948
+   query in one frame. **Finding 5's first observation currently has no image behind it.**
+3. **`07-261-listener.png`** — the 261 and its `EventXML` showing **only** `RDP-Tcp`. Holds up
+   "the protocol-bearing event cannot name the identity".
+4. `07-nla-comparison.png` — the two halves of the Step 9 matrix.
+5. `07-sysmon-config.png` — re-reads on demand.
+6. `07-4624-type10.png`, and the Step 5 `Group-Object` breakdown of the 479 events.
+
+**Already filed and verified against their contents** (2026-09-29): `07-1149-auth.png`,
+`07-session-attribution.png`, `07-session-lifecycle.png`. Two of the three arrived under wrong
+filenames — **check `assets/` on disk, never a note that claims something is missing.**
+
+**D. Cheap experiments that would upgrade a finding — optional**
+
+- **NLA off → reboot → retry the identical failure.** Settles Finding 3's leading candidate
+  (the listener never reloaded). The hourly licence shutdown supplies the reboot free.
+- **Fail as a nonexistent user**, compare the Sub Status against `0xC000006A`. No lockout cost,
+  and it settles password-guessing vs username-enumeration.
+
+**E. Desk work, no VM needed**
+
+- Decide on `C:\evidence\07-security.evtx` and `07-lsm.evtx` — on WS01, not in the repo.
+- Optionally file the 2026-09-15 `Test-NetConnection` capture as Module 06 evidence — Finding 2's
+  ground truth, and it identifies its own host via `SourceAddress : 10.0.0.20`.
+- **Push.** Commits are stacked up unpushed and **the repo is public** — review the screenshots
+  for anything beyond the documented lab names before publishing.
+
+---
+
 1. **Optionally reconstruct the first sitting's three screenshots** (`auditpol`, the SACL
    Auditing tab with Set Value ticked, a 4657 detail pane showing `OldValue`/`NewValue`), which
    were never captured. Module 03 is otherwise complete.
-2. **Close out Module 06** — the lab work is **done**, all five findings are written, ten
-   screenshots are filed and the Step 8 baseline table is fully read on both VMs (2026-09-25).
-   **One item remains: the `06-5152-ws01-empty.png` screenshot.** `06-sysmon3-zero.png` was
-   **deliberately dropped** and is permanently outstanding — Module 07 Step 3.2 has now added port
-   3389 to the Sysmon config, so the zero state can no longer be re-derived. The underlying result
-   is unaffected; the missing item is the illustration, not the evidence. Optionally also file the
-   2026-09-15 `Test-NetConnection` capture of the three unanswered knocks as Module 06 evidence —
-   it is Finding 2's ground truth and identifies its own host via `SourceAddress : 10.0.0.20`.
-2d. **Start the next session with the four-item checklist** now written into
-   `labs/07-remote-desktop.md` ("Start the next session with these"): two screenshots to move into
-   `assets/` (`07-sysmon-config.png`, `07-4947-rules-modified.png`), the **4732** from the Step 3.1
-   group addition to find on WS01, Module 06's `06-5152-ws01-empty.png`, and optionally filing the
-   2026-09-15 `Test-NetConnection` capture as Module 06 evidence. **None of it blocks Step 4.**
+2. 🚩 **NEXT SESSION — one sitting on the VMs closes BOTH Module 06 and Module 07.**
+   Full checklist below under **"The next sitting, in order"**. Everything else in both modules is
+   done: all findings written, lab work complete, state readback-verified.
 
-2c. **Run Module 07 (RDP), the final VM sitting — Steps 8–11.** ✅ Sittings 1 and 2 are
-   **complete** (2026-09-25, 2026-09-28): the lab built, two sessions made, all four logs joined
-   and the access story written. What is left on the machines is **Step 8** (a logon that fails),
-   **Step 9** (the NLA controlled experiment — **must restore `UserAuthentication` to `1` with a
-   readback**), **Step 10** (cleanup; leave `Other Logon/Logoff Events` **on**) and **Step 11**
-   (evidence, including moving six stranded screenshots into `assets/`). Then the **Findings**
-   section, which needs no VM. `asmith`'s five-attempt lockout threshold is live across Steps 8
-   and 9; `Unlock-ADAccount -Identity asmith` on DC01 is the recovery.
 2b. **Optional follow-up experiments Module 06 named but did not run**, each written into the
    findings as an open question rather than glossed: (i) probe a port that returns **RST**
    instead of being stealth-dropped, to discriminate "Sysmon logs completed connections" from
