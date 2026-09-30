@@ -61,7 +61,7 @@ starts from).
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
 | 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — four sittings + two closeouts; **2 screenshots left, both need DC01** |
-| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | 🟡 In progress — four sittings; findings written, **9 screenshots filed**, Step 10 at **5 of 6** (last row needs DC01) |
+| 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | ✅ **Complete** (2026-09-30) — five sittings, all findings written, 9 screenshots filed |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
@@ -371,7 +371,7 @@ Every lab (via the template) is laid out identically:
   2026-09-16 run, where three unanswered knocks produced 0 Event 3s against 373 Event 1s, and the
   Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
   change. The missing item is the illustration, not the evidence.
-- 🟡 **Module 07 (Remote Desktop) — sittings 1–4 complete, Steps 0–11 bar one readback and one screenshot (2026-09-29).** Two RDP
+- ✅ **Module 07 (Remote Desktop) — COMPLETE (2026-09-30), five sittings.** Two RDP
   sessions made from DC01 to WS01, reconstructed across all four logbooks and joined, with the
   access story and its MITRE mapping written (T1021.001, T1078).
 
@@ -553,12 +553,11 @@ Modules 01/04/05 is sound and needs no change.
 
 ### 🚩 The next sitting, in order
 
-**One short run with BOTH VMs up closes Modules 06 and 07.** Rewritten 2026-09-29 after sitting 4,
-which completed Module 07's Step 10 bar one row and filed six screenshots. Verified against the two
-lab files' own checklists, not against status notes.
+**✅ Module 07 is COMPLETE (2026-09-30). One run with BOTH VMs up closes Module 06, and with it
+all of Part I's detection work.** Updated 2026-09-30 after sitting 5, which closed Module 07's last
+Step 10 row. Verified against the lab files' own checklists, not against status notes.
 
-**DC01 must be powered on.** Sitting 4 ran WS01-only because it was off, and that is the only
-reason anything is left.
+**DC01 must be powered on.** Every remaining job needs it — that is what blocked sitting 4.
 
 **A. The `TcpListener` run (both VMs) — the last outstanding lab work in either module**
 
@@ -596,20 +595,19 @@ If H2 holds it is a finding in its own right: *a config edit that applies cleanl
 `Configuration updated`, and passes a live readback showing both values can still have disabled an
 existing rule.* Every check this lab knows how to run passes either way.
 
-**B. Module 07 Step 10 — one row left (WS01)**
+**B. ✅ DONE 2026-09-30 — Module 07 Step 10's last row**
 
-```
-Get-LocalGroupMember -Group 'Remote Desktop Users'
-```
+`Get-LocalGroupMember -Group 'Remote Desktop Users'` ran cleanly once DC01 was booted, **confirming
+that the error 1789 of 2026-09-29 was DC availability and not a broken trust.**
 
-Expect `CORP\asmith`, `PrincipalSource: ActiveDirectory`. It **failed with error 1789** on
-2026-09-29 — *the trust relationship … failed* — because **DC01 was powered off** and the group
-holds a domain account whose SID needs a DC to resolve. Expected to pass once DC01 is up; if it
-does not, that is a real problem rather than a side effect.
+It returned **two** members, not one: `CORP\asmith` (`ActiveDirectory`) **and `WS01\helpdesk`
+(`Local`)** — the second recorded nowhere in this repo. The analyst recalls adding it early on
+while practising; that is recollection rather than log evidence, and it is accepted. **Not an
+anomaly. `helpdesk` stays, documented.** The point worth keeping is that **every note said this
+group contained `asmith`**, so writing the state from memory would have missed a second account
+with remote-logon rights — which is exactly why Step 10 says to read values back.
 
-Everything else in Step 10 is read and recorded: `fDenyTSConnections` **0**, `UserAuthentication`
-**1**, `SecurityLayer` **2**, Sysmon v15.15 / schema 4.90 with both ports and all four registry
-rules, and all four audit switches. **The decision is recorded: RDP stays on, with NLA on.**
+**Module 07 is COMPLETE.**
 
 **C. Everything optional — DROPPED by decision, 2026-09-29. Do not re-propose.**
 

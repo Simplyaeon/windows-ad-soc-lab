@@ -1006,6 +1006,12 @@ decision on 2026-09-29**, its events having already been destroyed by rotation.
 That run now carries three jobs rather than two: `06-5152-ws01-empty.png`,
 `06-5152-listening.png`, and the H1/H2 test above.
 
+**Closed 2026-09-30 (sitting 5, two minutes):** DC01 was booted and
+`Get-LocalGroupMember -Group 'Remote Desktop Users'` ran cleanly, **confirming the 1789 diagnosis**
+and taking **Step 10 to 6 of 6**. It also returned a second member, `WS01\helpdesk`, which no note
+in this repo had recorded — see Step 10. **Module 07 is COMPLETE.** The only work left in either
+module is Module 06's `TcpListener` run.
+
 **Everything else optional across this module and Modules 03 and 06 was closed as won't-do on
 2026-09-29.** The full list is in `summary.md` section C. Each survives as a **declared limitation
 inside the finding it qualifies** rather than as outstanding work — which is the correct place for
@@ -2016,7 +2022,7 @@ Every value below is command output pasted back, not a setting remembered from w
 | `Filtering Platform Packet Drop` | **Failure** | `auditpol` |
 | `Filtering Platform Connection` | **Failure** — Success deliberately still off | `auditpol` |
 | `MPSSVC Rule-Level Policy Change` | **Success** | `auditpol` — **re-reads one of the two switches Module 06 left unverified** |
-| `asmith` in `Remote Desktop Users` | **not read** — blocked, see below | `Get-LocalGroupMember` |
+| `Remote Desktop Users` membership | **two members: `CORP\asmith` (`ActiveDirectory`) and `WS01\helpdesk` (`Local`)** | `Get-LocalGroupMember` — read 2026-09-30 |
 
 **The decision, recorded: RDP is left ON, with NLA on.** An undocumented enabled service is the
 problem, not an enabled one, and Part II's AD modules may want remote access to WS01.
@@ -2028,17 +2034,44 @@ sitting: WS01's Security log holds roughly **one day**, and a single twelve-minu
 writes **154 × 4688**. An event per *allowed* connection on top of that would leave a log measured
 in hours. Module 04's warning, with a number behind it.
 
-### The one readback that failed, and why it is not what it looks like
+### The readback that failed, and the two things it turned up — CLOSED 2026-09-30
 
-`Get-LocalGroupMember -Group 'Remote Desktop Users'` returned **error 1789** — *the trust
-relationship between this workstation and the primary domain failed.* **DC01 was powered off at
-the time.** `Remote Desktop Users` holds a *domain* account, so WS01 must ask a domain controller
-to resolve the SID to a name; with no DC to ask, the call fails — and it fails with the exact
-error code a genuinely broken machine account produces.
+On 2026-09-29, with DC01 powered off, `Get-LocalGroupMember -Group 'Remote Desktop Users'`
+returned **error 1789** — *the trust relationship between this workstation and the primary domain
+failed.* `Remote Desktop Users` holds a *domain* account, so WS01 must ask a domain controller to
+resolve the SID to a name; with no DC to ask, the call fails — and it fails with the exact error
+code a genuinely broken machine account produces.
 
-**Hypothesis, not established:** the cause is DC01 being down. The test is to boot DC01 and re-run,
-which has not yet happened. Recorded here rather than assumed, because "the trust is broken" is a
-conclusion that would cost a rebuild.
+**Hypothesis confirmed 2026-09-30.** DC01 was booted and the **identical command** returned both
+members cleanly. The trust was never impaired; the cause was availability. **The trap is now
+established, not suspected: a readback can fail for reasons that have nothing to do with the thing
+being read, and this one fails with a message that invites a diagnosis costing a rebuild.**
+
+Same family as the wrong-machine and wrong-channel traps, opposite failure mode — **those go
+silent, this one shouts something false.**
+
+### What the readback found that the notes did not have
+
+The group holds **two** members, not one:
+
+| Member | Source |
+|---|---|
+| `CORP\asmith` | `ActiveDirectory` — added in Step 3.1, logged as the 4732 |
+| **`WS01\helpdesk`** | **`Local`** — **not recorded anywhere in this repo before 2026-09-30** |
+
+`helpdesk` is the local account created in Module 01 and used in Module 02 as the deliberately
+*unauthorized* account for the NTFS denial evidence. **Provenance: the analyst recalls adding it
+to this group early on while practising.** That is recollection, not log evidence — the 4732 that
+would prove it is long gone, since WS01's Security log holds about a day — but it is a sufficient
+account of a lab machine's own history and **the entry is not treated as an anomaly.**
+
+**It is recorded because Step 10 is about state, and this is the state.** It is also the step's own
+principle paying off: the instruction is to **read the value back rather than record the command
+you ran**, and every note in this repo said this group contained `asmith`. Writing the state from
+memory would have missed a second account with remote-logon rights entirely.
+
+**Decision: `helpdesk` stays, documented.** Which is the same standard applied to RDP itself one
+section above — an *undocumented* grant is the problem, not a grant.
 
 **The trap generalises: a readback can fail for reasons that have nothing to do with the thing
 being read** — and this one fails loudly, with a message that invites exactly the wrong diagnosis.

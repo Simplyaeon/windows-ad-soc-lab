@@ -37,19 +37,15 @@ rather than trying to inspect anything directly.
 
 ### 🚩 START HERE — the next sitting (set 2026-09-29, after sitting 4)
 
-**One short run with BOTH VMs up closes Modules 06 and 07.** Module 07's sitting 4 (2026-09-29)
-finished Step 10 bar one row, filed six screenshots, and left **one** job that needs the lab.
-
-**DC01 must be powered on.** Sitting 4 ran WS01-only because DC01 was off, and that is the sole
-reason anything is left.
+**✅ MODULE 07 IS COMPLETE** (closed 2026-09-30). **One job is left in the whole of Part I: the
+`TcpListener` run, which finishes Module 06.** It needs **both VMs powered on**.
 
 | | On | What |
 |---|---|---|
-| **A** | **both** | **The `TcpListener` run** — three knocks, one setup. See the table below. It is the only outstanding lab work in either module |
-| **B** | WS01 | `Get-LocalGroupMember -Group 'Remote Desktop Users'` — the last Step 10 row. **Failed with error 1789 while DC01 was down**; expected to pass once it is up |
-| **C** | desk | Commit and push. Done 2026-09-29 (`c34880e`); verify with `git log origin/main..main` rather than trusting any line about push state |
+| **A** | **both** | **The `TcpListener` run** — three knocks, one setup. See the table below. **The only outstanding lab work in either module** |
+| **B** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
 
-**A and B are the whole list.** Everything previously carried as *optional* was **closed as
+**A is the whole list.** Everything previously carried as *optional* was **closed as
 won't-do on 2026-09-29** — see `summary.md` section C for the full set. In short:
 `07-4947-rules-modified.png`, the NLA-off-reboot-retry test, the nonexistent-user test, Module 06's
 RST probe and its three other follow-ups, and Module 03's reconstructed screenshots and fresh-SACL
@@ -715,8 +711,9 @@ and it is now an active constraint on sittings rather than a future one — plan
 reboot, and mark boundaries with `(Get-Date).ToUniversalTime()` so a restart does not orphan the
 timeline.
 
-**Sitting 4 ran 2026-09-29 — Steps 10 and 11, WS01 only (DC01 was off). Step 10 is 5 of 6; nine
-screenshots filed.** Full run log in `labs/07-remote-desktop.md`. What a future session needs:
+**✅ MODULE 07 IS COMPLETE.** Sitting 4 (2026-09-29) ran Steps 10–11 on WS01 and filed nine
+screenshots; **sitting 5 (2026-09-30) closed the last Step 10 row in two minutes** once DC01 was
+booted. Full run logs in `labs/07-remote-desktop.md`. What a future session needs:
 
 **The sitting's first command destroyed its own plan, and that was the useful result.** Meant to
 set up a screenshot, it characterised the population instead and found WS01's Security log holds
@@ -738,6 +735,7 @@ was already gone.** An `.evtx` export was taken immediately, before any capture.
 | **RemoteConnectionManager has never rolled** | oldest event **2026-09-25 09:39:44 UTC**, back to sitting 1. **12 × 261** — the listener logs more than once per connection, the same over-counting shape as the five 1149s. This low-volume channel keeps its whole history while the Security log beside it discards a day |
 | **Sysmon v15.15, schema 4.90**, both ports present, four registry rules intact | live `Sysmon64.exe -c`. **Closes sitting 1's unconfirmed schema version** |
 | Step 10 values | `fDenyTSConnections` **0**, `UserAuthentication` **1**, `SecurityLayer` **2**, and all four audit switches as intended — **`MPSSVC` on WS01 now re-read**, one of the two Module 06 left unverified |
+| **`Remote Desktop Users` holds TWO members** | `CORP\asmith` (`ActiveDirectory`) **and `WS01\helpdesk` (`Local`)**, read 2026-09-30. **No note in this repo recorded the second one** — the analyst recalls adding it early on while practising, which is recollection rather than log evidence (the 4732 rotated away long ago) and is accepted as sufficient for a lab machine. **Not an anomaly; `helpdesk` stays, documented.** It is Step 10's own principle paying off: every note said this group contained `asmith`, and writing the state from memory would have missed a second account with remote-logon rights |
 
 **The anomaly this sitting found, and it was found by READING A SCREENSHOT rather than by running
 anything new:** the Sysmon `NetworkConnect` group's two `DestinationPort` conditions are
@@ -925,13 +923,14 @@ commands creating them had never been run.
   value, not an error — it lives on `…/Terminal Server/WinStations/RDP-Tcp`. **Three causes, one
   symptom, no error in any:** never requested, genuinely empty, wrong key. Verified WS01
   2026-09-29.
-- **A readback can fail for reasons unrelated to what is being read.**
+- **A readback can fail for reasons unrelated to what is being read. ESTABLISHED 2026-09-30.**
   `Get-LocalGroupMember -Group 'Remote Desktop Users'` returned **error 1789** — *the trust
   relationship between this workstation and the primary domain failed* — because **DC01 was
   powered off** and the group holds a domain account whose SID needs a DC to resolve. That error
   is the classic symptom of a broken machine account, so the message invites a diagnosis that
-  would cost a rebuild. Same family as wrong-machine and wrong-channel, opposite failure mode:
-  those go silent, **this one shouts something false.**
+  would cost a rebuild. **Confirmed by booting DC01 and re-running the identical command, which
+  returned cleanly** — the trust was never impaired. Same family as wrong-machine and
+  wrong-channel, opposite failure mode: those go silent, **this one shouts something false.**
 
 ### Log rotation is now a measured deadline, not a background worry
 
