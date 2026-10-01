@@ -189,10 +189,19 @@ actually works, and the attacks and detections that dominate SOC work.
 - Understand FSMO roles at a high level.
 
 **Detect**
-- DC health/replication basics; where AD events live (Security log on the DC,
-  Directory Service log).
+- Where AD events live: the Security log on the DC, and the `Directory Service` log.
+- Whether this DC records changes to its own directory at all — `Directory Service
+  Changes` plus a SACL on the object, the Module 02/03 gate pattern in a third store.
 
-**Deliverable:** A network + trust diagram of your lab with the DC's roles labeled.
+**Deliverable:** A forest inventory and FSMO role map, read from command output.
+
+> **Revised 2026-10-01 (run sheet `labs/08-domains-forests-dcs.md`).** The original
+> deliverable was *"a network + trust diagram of your lab with the DC's roles labeled."*
+> `corp.local` is a single domain in a single forest with one DC, so **there are no trusts
+> to draw and nothing to replicate with** — a trust needs a second forest, which is a third
+> VM. The module runs the trust query anyway and records the empty result as a documented
+> baseline. Trust enumeration and replication monitoring are **out of scope for this
+> journal**, declared rather than deferred.
 
 ## Module 9 — Organizational Units & Delegation
 **Build**
