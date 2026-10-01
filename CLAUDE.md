@@ -35,72 +35,67 @@ rather than trying to inspect anything directly.
 
 ## Where things stand
 
-### 🚩 START HERE — the next sitting (set 2026-09-29, after sitting 4)
+### 🚩 START HERE — the next sitting (set 2026-10-01, after Module 06 closed)
 
-**✅ MODULE 07 IS COMPLETE** (closed 2026-09-30). **One job is left in the whole of Part I: the
-`TcpListener` run, which finishes Module 06.** It needs **both VMs powered on**.
+**✅ PART I IS COMPLETE.** Modules 00–07 are all closed. **Module 06 was finished on 2026-10-01**
+by the `TcpListener` sitting — matrix rows 1 and 3 re-run from scratch, both outstanding
+screenshots captured and filed, the Sysmon `And` question settled. **There is no outstanding lab
+work anywhere in Part I.**
+
+**Next: Module 08, whose run sheet is already written** (`labs/08-domains-forests-dcs.md`, written
+2026-10-01, not yet run). **DC01-only**, so WS01's hourly licence shutdown cannot disrupt it.
 
 | | On | What |
 |---|---|---|
-| **A** | **both** | **The `TcpListener` run** — three knocks, one setup. See the table below. **The only outstanding lab work in either module** |
-| **B** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
+| **A** | DC01 | **Module 08 sitting 1** — Steps 0–5, entirely read-only. Includes **the first ever measurement of DC01's Security log horizon** |
+| **B** | DC01 | **Module 08 sitting 2** — Steps 6–12, the audit gates and the detection half |
+| **C** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
 
-**A is the whole list.** Everything previously carried as *optional* was **closed as
-won't-do on 2026-09-29** — see `summary.md` section C for the full set. In short:
-`07-4947-rules-modified.png`, the NLA-off-reboot-retry test, the nonexistent-user test, Module 06's
-RST probe and its three other follow-ups, and Module 03's reconstructed screenshots and fresh-SACL
-test.
+**What Module 08 tests:** whether Modules 02 and 03's gate pattern — a subcategory switch *plus*
+the object's SACL, either one silently swallowing the event — holds in **Active Directory**, a
+third store. If it does, it is architectural rather than a per-store quirk.
+
+**Two limitations are declared, not deferred:** one domain, one DC, therefore **no trusts and
+nothing to replicate**. The roadmap's "network + trust diagram" deliverable was **revised
+2026-10-01** to a forest inventory and FSMO role map. **Adding a second DC or forest was
+considered and declined** — do not re-propose it.
+
+**Closed as won't-do — do not re-propose as work:**
+
+- ✖ **Module 06's `Filter Origin` GUID identification**, closed by decision 2026-10-01.
+  **Consequence stated plainly:** the parked precedence question stays open, and the 2026-10-01
+  run's two-field disagreement with 2026-09-14 (`Filter Origin` GUID vs `Query User Default`,
+  `Layer Name` `Receive/Accept` vs `Transport`) stays **unexplained**.
+- ✖ Everything in `summary.md` section C, closed 2026-09-29: `07-4947-rules-modified.png`, the
+  NLA-off-reboot-retry test, the nonexistent-user test, Module 06's RST probe and its three other
+  follow-ups, Module 03's reconstructed screenshots and fresh-SACL test.
 
 **They remain written into the Findings as open questions, and that is correct** — an unrun test
-is a limitation to declare, not a task to carry. **Do not re-propose them as work.** If a finding
-reads as though it needs one of them to be complete, the fix is to state the limitation more
-plainly, not to schedule the experiment.
+is a limitation to declare, not a task to carry. If a finding reads as though it needs one of
+them, the fix is to state the limitation more plainly, not to schedule the experiment.
 
-**Item A in detail — three knocks, because the matrix rows differ in setup:**
+**Four lessons from the 2026-10-01 sitting, and they generalise:**
 
-| | Setup on DC01 | Gives |
-|---|---|---|
-| 1 | nothing | WS01 logs nothing about its own outbound knock → **`06-5152-ws01-empty.png`** |
-| 2 | `TcpListener` + **allow** rule | connection completes → **does Sysmon log Event 3 for 9999?** Settles H1/H2 below |
-| 3 | `TcpListener` + **block** rule | 5152 reads `Query User Default` / `powershell.exe` → **`06-5152-listening.png`** |
+1. **A readback that passes is not a readback that is readable.** Sysmon's live config printed two
+   `DestinationPort` conditions combined with `And` — unsatisfiable read literally — and the rule
+   worked. Apply, `Configuration updated`, and a readback showing both values **all passed in both
+   worlds**; only firing a packet at the port could separate them.
+2. **The newest matching event is not the right event** — second instance after Module 07's
+   `-First 1`. `-MaxEvents 1` returned a port-389 LDAP stealth drop fourteen minutes past the
+   knock. **Filter by time and content, then pick.**
+3. **A taskbar clock dates the capture, not the filing.** Two frames an hour apart on their own
+   clocks arrived five minutes apart; a timezone mismatch between the VMs was asserted as the
+   cause before `Get-TimeZone` (UTC+1 on both) refuted it. **The one-command check should have
+   come first** — this is the evidence-discipline failure mode, committed again.
+4. **Durability and coverage are different properties.** `pfirewall.log` has not rotated in
+   seventeen days while the Security log beside it holds about one day. The instrument that is
+   structurally blind to stealth drops is the more persistent record of what it does catch.
 
-**Knock 3 needs a BLOCK rule, not an allow rule** — matrix row 3 is *something listening **and** a
-block rule*, which is what moves `Filter Origin` off `Stealth` and puts a process name in the
-event. Delete every rule afterwards **with a readback**; Finding 5 has three instances of a
-`Remove-` that ran not being a rule that is gone.
-
-**⚠️ The open question knock 2 settles.** Module 07 Step 3.2 added port 3389 to the same Sysmon
-`NetworkConnect` group, and the 2026-09-29 readback shows both `DestinationPort` conditions
-**combined with `And`** — unsatisfiable if read literally. 3389 demonstrably still matches, so
-they cannot be strictly ANDed; but **9999 has not been tested since the edit**, and Module 06's
-only Event 3 for it predates the edit by nine days. **H1:** same-field conditions are OR'd and
-nothing changed. **H2:** the last condition wins and the 9999 rule is silently dead. If H2, that
-is a finding: *a config edit that reads as additive, applies cleanly, returns `Configuration
-updated`, and passes a live readback showing both values can still have disabled a rule.*
-
-**Three lessons from sittings on 2026-09-29, and they generalise:**
-
-1. **A rolled-up status line is not an inventory.** This file, `summary.md` and the README all
-   said Module 06 was *one* screenshot away while its own checklist had **three** unticked boxes.
-   **Count the checklist, not the summary.**
-2. **Check `assets/` on disk before recording an absence.** Three Module 07 screenshots were
-   already filed while every note said none were — two under wrong filenames
-   (`07-1149-auth.png.png`, `Session-Lifecycle.png`, both now renamed).
-3. **"Recoverable later" is a deadline nobody wrote down.** WS01's Security log was measured at a
-   **one-day horizon** on 2026-09-29. Screenshots recorded as *"recoverable — the event is still
-   in the log"* were, for Module 06's knock and Module 07's 4947 burst, **already gone**. Export an
-   `.evtx` **first**, then photograph at leisure. It is what saved the Type 10 logon and the
-   479-event breakdown this sitting.
-
-**Read `summary.md` first** — it carries the current status, the per-module findings, and
-the next steps, and is the file to update as modules complete. Modules 00–05 are complete
-with findings written and evidence in `assets/`;
-check `git log origin/main..main` rather than trusting any line about push state.
-**Module 06 is NEARLY COMPLETE** (written 2026-09-13; four sittings 2026-09-13 → 2026-09-16,
-plus closeout sittings 2026-09-25 and 2026-09-29; lab work done, all five findings written, ten
-screenshots filed — only **two screenshots** outstanding, both needing DC01) — see its section
-below. **Module 07 is NEARLY COMPLETE** — four sittings, all findings written, **nine screenshots
-filed**, Step 10 at 5 of 6. The rest are planned — see `SOC-Analyst-Roadmap.md`.
+**Read `summary.md` first** — it carries the current status, the per-module findings and the next
+steps, and is the file to update as modules complete. **Modules 00–07 are complete** with findings
+written and evidence in `assets/`; check `git log origin/main..main` rather than trusting any line
+about push state. **Module 08's run sheet is written and not yet run.** The rest are planned — see
+`SOC-Analyst-Roadmap.md`.
 
 Only what a session can't get from those files is kept here: the blockers, the measured
 baselines, and the traps.
@@ -261,7 +256,7 @@ Windows writes to constantly when idle. Per Module 04, that is how older evidenc
 **Do not edit Winlogon `Userinit` or `Shell` on WS01.** A bad value boots to a blank screen with no
 shell, recoverable only by snapshot restore. `Run` keys fail harmlessly; those two do not.
 
-### Module 06 (Windows Firewall) — NEARLY COMPLETE
+### Module 06 (Windows Firewall) — ✅ COMPLETE (closed 2026-10-01)
 
 Written 2026-09-13 (`labs/06-windows-firewall.md`); four sittings 2026-09-13 → 2026-09-16,
 **both VMs**. The run sheet is rewritten from the run, **all five findings are complete**
@@ -388,25 +383,56 @@ config, so the re-derivation described above is **no longer available** and the 
 Event 3 count was independently confirmed to still be **1** on 2026-09-25 before any config
 change. The missing item is the illustration, not the evidence.
 
-**What is left to finish Module 06 — TWO capturable screenshots, not one.** The six
-`Get-NetFirewallProfile` readbacks were taken on **2026-09-25** and the Step 8 table is fully
-populated from command output on both VMs. Remaining:
+**✅ MODULE 06 IS COMPLETE.** Sitting 5 (2026-10-01, both VMs) captured both outstanding
+screenshots and closed the last open question. What a future session needs:
 
-1. **`06-5152-ws01-empty.png`** — WS01, the 5152 count beside the port-9999 filter returning
-   nothing. The recorded count of **1040** is from 2026-09-16 and will not reproduce; note the
-   recapture date rather than swapping the figure in the finding.
-2. **`06-5152-listening.png`** — DC01, the 5152 after the `TcpListener` started
-   (`Filter Origin: Query User Default`, `Application Name: powershell.exe`) plus the populated
-   `pfirewall.log`. **Its pair with `06-5152-stealth.png` is Finding 4.**
+**The sitting's three knocks, all with instruments proved first** — `Filtering Platform Packet
+Drop` read **Failure** on *both* hosts before either knock, which is the step Finding 5 exists
+because the 2026-09-15 run skipped.
 
-⚠️ **Item 2 was missing from every status note until 2026-09-29** — this file, `summary.md` and
-the README all said Module 06 was *one* screenshot away, while `labs/06-windows-firewall.md`'s own
-checklist had **three** unticked boxes the whole time. **A rolled-up status line is not an
-inventory. Count the checklist, and check `assets/` on disk.** Same failure as the Module 07
-screenshots that were recorded as "none filed" while three were already on disk under two wrong
-filenames.
+| | UTC | Setup on DC01 | Result |
+|---|---|---|---|
+| 1 | 10:04:19 | nothing | ×3 `False`, `PingSucceeded True` → `06-5152-ws01-empty.png` |
+| 2 | 10:31:29 | listener + **allow** | `True` → **settled the Sysmon `And` question** |
+| 3 | 10:41:41 | listener + **block** | `False` → `06-5152-listening.png` |
 
-`06-sysmon3-zero.png` is **permanently unobtainable** and is now marked dropped in the checklist
+**Verified during the run — only what the user pasted back:**
+
+| Fact | Evidence |
+|---|---|
+| **H1 wins: Module 07's edit never disabled Module 06's 9999 rule** | Sysmon Event 3 **13 → 14**, newest event `DestinationPort 9999` at the knock time. **Two same-field `DestinationPort` conditions behave as OR although the live readback prints them combined with `And`.** Behaviour established; **mechanism not** |
+| **A readback that passes is not a readback that is readable** | apply, `Configuration updated`, and a live readback showing both values **all passed in the world where the rule was dead and the world where it was fine**. Only firing a packet separated them |
+| WS01 records nothing about its own outbound knock | **879** × 5152, oldest **2026-09-30 01:30:16 UTC**, **nothing** for 9999. Window covers the knock by 32 hours |
+| **The newest matching event was the wrong event — 2nd instance** | `-MaxEvents 1` on DC01 returned a **port-389 LDAP** stealth drop from 10:55:17, fourteen minutes past the knock. After Module 07's `-First 1`. **Filter by time and content, then pick** |
+| Matrix row 3 reproduced | `Process ID 2688`, `Application Name` populated, `Destination Port 9999`, **5 × 5152 matching 5 `pfirewall.log` lines** — one knock, five SYN retransmits, counted alike by both instruments |
+| **`Application Name` is a device path** | `\device\harddiskvolume3\windows\system32\windowspowershell\v1.0\powershell.exe`, **not** `C:\Windows\…`. A hunt on `'*C:\Windows*'` returns nothing. **Third member of the family** holding `\REGISTRY\MACHINE\` and `HKU\<SID>`. The old note saying "powershell.exe" was an abbreviation |
+| **`pfirewall.log` has not rotated in 17 days** | still holds the **2026-09-14 10:36:37–10:36:52** lines beside today's, while WS01's Security log holds ~1 day. **Durability and coverage are different properties** — the instrument blind to stealth drops is the persistent one |
+| Both VMs confirmed **UTC+1 WAT** | `Get-TimeZone` on each. Reconfirms the 2026-08-24 note |
+| Cleanup readback-verified | both rules gone via a **wildcard** `-DisplayName '*9999*'` readback, which also catches the case variants this module was bitten by; listener stopped |
+
+**Two fields disagree with the 2026-09-14 run and are NOT explained.** `Filter Origin` is a GUID
+(`{3698329f-420d-4331-9484-ddcab3740158}`) rather than `Query User Default`, and `Layer Name` is
+`Receive/Accept` rather than `Transport`. The known difference between runs is how the rule was
+made — **wf.msc wizard, Public only** then, **`New-NetFirewallRule -Profile Any`** now. **No cause
+established.** The candidate explanation (that `New-NetFirewallRule` auto-names with a GUID, so
+`Filter Origin` is literally this rule) was **not tested — closed by decision 2026-10-01**, and
+the test is recorded as won't-do rather than outstanding. It was still recoverable at that point
+from the **4948**, which carries `Rule ID` and therefore outlives the rule. **Consequence: Module
+06's parked precedence question stays open.**
+
+**Observation, no cause established:** WS01's 5152 count fell from **2065** (2026-09-29) to **879**
+(2026-10-01). Less uptime is the obvious guess and is **not established**; `oldestRecordNumber`
+would discriminate. Not run.
+
+**One error made and corrected in-session, recorded because of how it happened.** Two screenshots'
+taskbar clocks read an hour apart while arriving five minutes apart, and **a timezone mismatch
+between the VMs was asserted as the cause before the one-command check**. `Get-TimeZone` returned
+UTC+1 on both and killed it; the real explanation was that the WS01 frame was the *original*
+capture, proven by its count and oldest record being identical to figures reported an hour
+earlier. **A taskbar clock dates the capture, not the filing.** This is the evidence-discipline
+failure mode committed again — mechanism invented to fit surprising data, ahead of the cheap test.
+
+`06-sysmon3-zero.png` is **permanently unobtainable** and is marked dropped in the checklist
 rather than left unticked.
 
 **The 2026-09-25 readbacks closed three open unknowns.** `LogBlocked` **survived the
@@ -421,8 +447,10 @@ returned **Block inbound / Allow outbound** on both hosts, reconciling with the
 `BlockInbound,AllowOutbound` already on record. And **`LogFileName` is stored as a literal
 `%systemroot%\...`**, which PowerShell does not expand.
 
-**Ten screenshots are filed in `assets/`**, each verified against its actual contents before
-filing rather than trusted by filename: `06-5152-stealth.png`, `06-rule-verified.png`,
+**Twelve screenshots are filed in `assets/`**, each verified against its actual contents before
+filing rather than trusted by filename: `06-5152-ws01-empty.png` (self-attributing, `hostname →
+WS01` in frame), `06-5152-listening.png` (self-attributing via `Destination Address 10.0.0.10`
+plus a local `pfirewall.log` read), `06-5152-stealth.png`, `06-rule-verified.png`,
 `06-sysmon-attribution.png`, `06-auditpol-before.png`, `06-firewall-profiles.png`,
 `06-4946-rule-added.png`, `06-4946-allow-rule-added.png`, `06-4948-rule-deleted.png`,
 `06-4948-extended.png`, `06-no-attribution.png`. **No `.evtx` export was taken** — a deliberate
@@ -889,9 +917,25 @@ commands creating them had never been run.
   (`User`, `SessionID`, `Address`), not as `Data` entries with a `Name` attribute. `.Event.UserData`
   alone prints only the wrapper. A **third** field shape, after `EventData.Data` and 1102's
   `UserData.LogFileCleared`.
-- **The newest matching event is not the right event.** `-First 1` on `asmith`'s 4624s returned a
-  Type 10 logon from the correct source address that was a **nine-second** transient, not the
-  interactive session. Read the whole set, then pick.
+- **The newest matching event is not the right event. TWO instances now.** `-First 1` on
+  `asmith`'s 4624s returned a Type 10 logon from the correct source address that was a
+  **nine-second** transient, not the interactive session (2026-09-28). `-MaxEvents 1` on DC01's
+  5152s returned a **port-389 LDAP** stealth drop fourteen minutes past the knock being
+  investigated (2026-10-01) — right channel, right ID, right host, wrong event, and it reads like
+  a result. **Filter by time and content first, then pick.** Read the whole set before choosing
+  one.
+- **A readback that passes is not a readback that is readable. ESTABLISHED 2026-10-01.** Sysmon's
+  live config printed two `DestinationPort` conditions combined with **`And`** — unsatisfiable
+  read literally — and both ports demonstrably match. Every check this lab knows how to run
+  (apply, `Configuration updated`, live readback showing both values) **passed identically in the
+  world where the rule was dead and the world where it was fine.** Only firing a packet at the
+  port could separate them. A readback proves a value is *present*, not that you have read its
+  semantics correctly.
+- **A taskbar clock dates the capture, not the filing.** Two screenshots whose clocks read an hour
+  apart arrived five minutes apart; a timezone mismatch between the VMs was asserted as the cause
+  before `Get-TimeZone` (UTC+1 on both) refuted it. The real cause was one frame being an older
+  capture, proven by its counts being identical to figures reported an hour earlier. **Run the
+  one-command check before proposing a mechanism.**
 - Empty output is not an error. Check in order: wrong machine → **wrong channel** → window too narrow or
   starved → **events overwritten** → channel disabled → auditing actually off.
 - **To judge rotation, read `oldestRecordNumber` from `wevtutil gli <log>` — NOT `FileSize`

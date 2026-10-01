@@ -60,13 +60,13 @@ starts from).
 | 03 | The Windows Registry & Persistence | 4657, Sysmon 12/13/14 | ✅ Complete |
 | 04 | Event Viewer & the Logging Model | 1102, 104, 4719, 4688 | ✅ Complete |
 | 05 | PowerShell for Defenders | 4104, 4103, 4688 | ✅ Complete |
-| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | 🟡 In progress — four sittings + two closeouts; **2 screenshots left, both need DC01** |
+| 06 | Windows Firewall | **5152**, 4946/4948, 5157 | ✅ **Complete** (2026-10-01) — five sittings, all five findings written, 12 screenshots filed |
 | 07 | Remote Desktop (RDP) | 4624·T10, 1149, 21/24/25, 4778/4779, **4947**, **4625·T3 + 261** | ✅ **Complete** (2026-09-30) — five sittings, all findings written, 9 screenshots filed |
 
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
-| 08 | Domains, Forests & DCs | (concepts) | ⬜ Planned |
+| 08 | Domains, Forests & DCs | 5136/5137/5141 | 📝 Run sheet written 2026-10-01, not yet run |
 | 09 | OUs & Delegation | 5136, 4662, 5141 | ⬜ Planned |
 | 10 | Group Policy (GPO) | 5136, 4739, 5145 | ⬜ Planned |
 | 11 | DNS | 256/257 | ⬜ Planned |
@@ -551,109 +551,67 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-### 🚩 The next sitting, in order
+### 🚩 START HERE — the next sitting (set 2026-10-01, after Module 06 closed)
 
-**✅ Module 07 is COMPLETE (2026-09-30). One run with BOTH VMs up closes Module 06, and with it
-all of Part I's detection work.** Updated 2026-09-30 after sitting 5, which closed Module 07's last
-Step 10 row. Verified against the lab files' own checklists, not against status notes.
+**✅ PART I IS COMPLETE.** Modules 00–07 are all closed, with findings written and evidence in
+`assets/`. **Module 06 was finished on 2026-10-01** by the `TcpListener` sitting: matrix rows 1
+and 3 re-run from scratch, both outstanding screenshots captured and filed, and the Sysmon `And`
+question settled. **There is no outstanding lab work anywhere in Part I.**
 
-**DC01 must be powered on.** Every remaining job needs it — that is what blocked sitting 4.
+**The next job is Module 08 — and its run sheet is already written**
+(`labs/08-domains-forests-dcs.md`, written 2026-10-01, not yet run). It is **DC01-only**, which
+makes it the first module in a while that WS01's hourly licence shutdown cannot disrupt.
 
-**A. The `TcpListener` run (both VMs) — the last outstanding lab work in either module**
-
-Three knocks, one setup, because the matrix rows differ:
-
-| | Setup on DC01 | Gives |
+| | On | What |
 |---|---|---|
-| **1** | nothing | WS01 logs nothing about its own outbound knock → **`06-5152-ws01-empty.png`** |
-| **2** | `TcpListener` + **allow** rule | the connection completes → **does Sysmon log Event 3 for 9999?** |
-| **3** | `TcpListener` + **block** rule | 5152 reads `Query User Default` / `powershell.exe` → **`06-5152-listening.png`** |
+| **A** | DC01 | **Module 08, sitting 1** — Steps 0–5. Entirely read-only: forest/domain/DC shape, FSMO, `ntds.dit` + SYSVOL, the empty trust baseline, and **the first measurement of DC01's Security log horizon** |
+| **B** | DC01 | **Module 08, sitting 2** — Steps 6–12. Opens `Directory Service Changes`, sets one SACL, generates three changes, hunts them |
+| **C** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
 
-**Knock 3 needs a BLOCK rule, not an allow rule.** Matrix row 3 is *something listening **and** a
-block rule* — that combination is what moves `Filter Origin` off `Stealth` and puts a process name
-in the event. An allow rule produces the wrong frame.
+**What Module 08 is testing, and why it is worth a sitting despite being a concepts module:**
+Modules 02 and 03 found the same gate structure twice — a subcategory switch *plus* the object's
+own SACL, either of which silently swallows the expected event. Module 08 tests whether the
+pattern holds in **Active Directory**, a third and completely different store. If it does, it
+stops being a filesystem or registry quirk and becomes architectural.
 
-For knock 1, **use the uncapped query**. The run sheet's own `-MaxEvents 20 | Where-Object` form is
-the filter-first trap and cannot find a knock more than a few minutes old; a correction is now
-written into Step 7.1. Put `hostname` **and the oldest record's timestamp** in the frame, so the
-image states the window it covers.
+**Two limitations are declared rather than deferred:** this lab has one domain and one DC, so
+**there are no trusts and nothing to replicate**. The roadmap's original "network + trust diagram"
+deliverable was **revised on 2026-10-01** to a forest inventory and FSMO role map. Step 4 runs
+`Get-ADTrust` anyway and records the empty result as a documented baseline. **Do not propose
+adding a second DC or forest** — that was considered and declined on 2026-10-01.
 
-Delete every rule afterwards **with a readback** — Finding 5 has three instances of a `Remove-`
-that ran not being a rule that is gone.
+**Three open items carried out of Module 06, all closed as won't-do — do not re-propose:**
 
-**⚠️ What knock 2 settles.** Module 07 Step 3.2 added port 3389 to the same Sysmon `NetworkConnect`
-group. The 2026-09-29 live readback shows both `DestinationPort` conditions **combined with `And`**
-— unsatisfiable read literally. Port 3389 demonstrably still matches, so they cannot be strictly
-ANDed; but **9999 has not been tested since the edit**, and Module 06's only Event 3 for it predates
-the edit by nine days.
+- ✖ **The `Filter Origin` GUID identification.** Closed by decision 2026-10-01. **Consequence,
+  stated plainly:** Module 06's parked precedence question stays open, and the 2026-10-01 run's
+  two-field disagreement with the 2026-09-14 run (`Filter Origin` GUID vs `Query User Default`,
+  `Layer Name` `Receive/Accept` vs `Transport`) stays **unexplained**.
+- ✖ Everything in section C below, closed 2026-09-29.
 
-- **H1** — same-field conditions are OR'd despite the label; nothing has changed.
-- **H2** — the last condition wins, and the 9999 rule was **silently disabled** by an edit that
-  looked purely additive.
+**Lessons from the 2026-10-01 sitting that generalise:**
 
-If H2 holds it is a finding in its own right: *a config edit that applies cleanly, returns
-`Configuration updated`, and passes a live readback showing both values can still have disabled an
-existing rule.* Every check this lab knows how to run passes either way.
-
-**B. ✅ DONE 2026-09-30 — Module 07 Step 10's last row**
-
-`Get-LocalGroupMember -Group 'Remote Desktop Users'` ran cleanly once DC01 was booted, **confirming
-that the error 1789 of 2026-09-29 was DC availability and not a broken trust.**
-
-It returned **two** members, not one: `CORP\asmith` (`ActiveDirectory`) **and `WS01\helpdesk`
-(`Local`)** — the second recorded nowhere in this repo. The analyst recalls adding it early on
-while practising; that is recollection rather than log evidence, and it is accepted. **Not an
-anomaly. `helpdesk` stays, documented.** The point worth keeping is that **every note said this
-group contained `asmith`**, so writing the state from memory would have missed a second account
-with remote-logon rights — which is exactly why Step 10 says to read values back.
-
-**Module 07 is COMPLETE.**
-
-**C. Everything optional — DROPPED by decision, 2026-09-29. Do not re-propose.**
-
-The following were carried as optional and are now **closed as won't-do**. They are recorded here
-so a future session recognises them as decided rather than forgotten:
-
-- ✖ **`07-4947-rules-modified.png`** — its events are permanently gone (the burst was 2026-09-25;
-  the log holds a day), and regenerating them means toggling the Remote Desktop rules. **Finding
-  5's first observation stands on text with no image**, which is stated in the finding.
-- ✖ **NLA off → reboot → retry.** Finding 3's leading candidate — that the listener never reloaded
-  — therefore **remains untested**, and the finding says so.
-- ✖ **Fail as a nonexistent user.** `0xC000006A` therefore **remains recall, not established**,
-  and the finding says so. What *is* established is that `FailureReason` conflates the two cases
-  deliberately (`%%2313` = "Unknown user name or bad password").
-- ✖ **Module 06's RST probe**, stealth-mode reconfiguration, the `Query User Default` precedence
-  question, and the 4688-rate re-measurement — the last of these was **answered anyway** by
-  sitting 4's rotation measurement.
-- ✖ **Module 03's three reconstructed screenshots** and the fresh-SACL test for its parked anomaly.
-
-**These stay written into the Findings as open questions**, because that is what the evidence
-honestly supports — an unrun test is a limitation to declare, not a task to carry. **The
-distinction matters: they are no longer work, they are still caveats.**
-
-**D. Desk work**
-
-- **Commit and push.** Done 2026-09-29 (`c34880e`); `main` level with `origin/main`. Review
-  screenshots before publishing; the repo is public.
-- Decide on the `.evtx` files on WS01: `07-security.evtx`, `07-lsm.evtx`, `0929-security.evtx`, and
-  a fourth dated **2026-08-25** that is **unidentified**. None are in the repo.
-
-**The lesson sitting 4 paid for, and it outranks the checklist:** **"recoverable later" is a
-deadline nobody wrote down.** Screenshots recorded as *"recoverable — the event is still in the
-log"* were, for Module 06's knock and Module 07's 4947 burst, already gone. **Export an `.evtx`
-first, then photograph at leisure** — that is what made the Type 10 logon and the 479-event
-breakdown recoverable at all.
+1. **A readback that passes is not a readback that is readable.** The Sysmon config printed two
+   `DestinationPort` conditions combined with `And` — unsatisfiable read literally — and the rule
+   worked fine. Apply, `Configuration updated`, and a live readback showing both values **all
+   passed in both worlds.** Only firing a packet at the port could separate them.
+2. **The newest matching event is not the right event** — second instance, after Module 07's
+   `-First 1`. `-MaxEvents 1` returned a port-389 LDAP drop fourteen minutes past the knock.
+   **Filter by time and content, then pick.**
+3. **A taskbar clock dates the capture, not the filing.** Two frames an hour apart on their own
+   clocks arrived here five minutes apart, and a timezone mismatch between the VMs was asserted as
+   the cause before `Get-TimeZone` refuted it. **The one-command check should have come first.**
+4. **`pfirewall.log` has not rotated in seventeen days** while WS01's Security log holds about one.
+   Durability and coverage are different properties; the blind instrument is the persistent one.
 
 ---
 
-1. 🚩 **NEXT SESSION — one short run with BOTH VMs up closes Module 06 and Module 07.**
-   Full checklist above under **"The next sitting, in order"**. After sitting 4 (2026-09-29) the
-   only outstanding lab work is the `TcpListener` run, which needs DC01 powered on — that is also
-   what blocks Module 07's last Step 10 row and settles the Sysmon `And` question.
-2. **Then Module 08.** Nothing optional stands between here and it — every "could also test" item
-   across Modules 03, 06 and 07 was **closed as won't-do on 2026-09-29** and is listed under
-   section C above. Each survives where it belongs, as a declared limitation inside the finding it
-   qualifies. **Do not re-propose them as work.**
+1. 🚩 **NEXT SESSION — Module 08, sitting 1 (DC01 only, read-only).** The run sheet is written:
+   `labs/08-domains-forests-dcs.md`. Steps 0–5 change nothing on the machine, so it is a safe
+   sitting to run at any time. **Part I has no outstanding lab work.**
+2. **Module 08 sitting 2** then opens `Directory Service Changes` and tests whether Modules 02 and
+   03's gate pattern holds in a third store. Nothing optional stands anywhere between here and
+   Module 09 — every "could also test" item across Modules 03, 06 and 07 is **closed as won't-do**
+   and listed under section C above and in each module's own run log. **Do not re-propose them.**
 3. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
    has risen again: Module 02's audit config, Module 03's `Registry` subcategory + Run-key SACL,
    and now the **completed** Sysmon install and config would all need redoing.

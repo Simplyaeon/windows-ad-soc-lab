@@ -3,6 +3,8 @@
 > **Runs on:** WS01 **and** DC01 — the first module since 01 that needs both
 > **Time:** ~2 hours, best split across three sittings
 > **Roll back to:** `mod04-start` (WS01) · **Snapshot before starting:** `mod06-start` (both VMs)
+> **Status: ✅ COMPLETE — closed 2026-10-01** after five sittings. All five findings written,
+> twelve screenshots filed, all lab state cleaned up with readbacks.
 
 ---
 
@@ -1329,14 +1331,16 @@ In `../assets/`, spaceless `06-*` names:
       `Get-NetFirewallPortFilter` (`Protocol: TCP`, `LocalPort: 9999`, `RemotePort: Any`), the
       proof that row 2 of the matrix had a correct rule. The same frame timestamps the knock:
       `$ps.TimeCreated` = **10:23:21 local / 09:23:21 UTC, 2026-09-14**
-- [ ] `06-5152-listening.png` — **OUTSTANDING, on DC01.** The 5152 after the listener was
-      started, showing `Filter Origin: Query User Default` and `Application Name: powershell.exe`,
-      plus the now-populated text file. **The pair with `06-5152-stealth.png` is Finding 4**, which
-      is therefore half-illustrated. ⚠️ **Every status note omitted this until 2026-09-29** and
-      claimed Module 06 was one screenshot away. **Check first whether the 2026-09-15/16 event is
-      still in DC01's Security log**; if it has rolled, recovering it means re-running matrix row 3
-      (`TcpListener` + readback-verified inbound allow rule on DC01, one knock from WS01) and then
-      deleting the rule **with a readback**
+- [x] `06-5152-listening.png` — **captured 2026-10-01, 12:12 local, DC01.** Matrix row 3
+      re-run from scratch: `TcpListener` plus a readback-verified **block** rule, one knock from
+      WS01 at 10:41:41 UTC. The frame holds **both halves of Finding 4 at once** — five
+      `pfirewall.log` DROP lines for port 9999 (11:40:50–11:41:05 local) above a 5152 reading
+      `Process ID 2688`, `Application Name \device\harddiskvolume3\…\powershell.exe`,
+      `Destination Port 9999`. **Self-attributing without a `hostname` line**: `Destination
+      Address 10.0.0.10` plus a local read of `pfirewall.log` can only be DC01.
+      ⚠️ **Two fields differ from the 2026-09-14 run** — `Filter Origin` is a GUID
+      (`{3698329f-420d-4331-9484-ddcab3740158}`) rather than `Query User Default`, and
+      `Layer Name` is `Receive/Accept` rather than `Transport`. See the sitting-5 run log
 - [x] `06-sysmon-attribution.png` — **captured 2026-09-16.** Sysmon **Event 3** fields pulled
       by name for the connection that **completed**: `UtcTime 2026-09-15 23:09:13.841`,
       `Image …\powershell.exe`, **`User CORP\Administrator`**, `SourceHostname WS01.corp.local`,
@@ -1350,23 +1354,148 @@ In `../assets/`, spaceless `06-*` names:
       rests on the 2026-09-16 run (three unanswered knocks → 0 Event 3s against 373 Event 1s), and
       the count was independently confirmed still **1** on 2026-09-25 before the config change.
       **The missing item is the illustration, not the evidence.** Not an open task
-- [ ] `06-5152-ws01-empty.png` — on WS01, the 5152 count beside the `9999` filter returning
-      nothing. The instrument demonstrably alive and demonstrably silent about the knock, in one
-      frame. (Replaces the planned `06-5157-ws01-empty.png`; 5152 is the channel that matters and
-      the one that was actually enabled there.)
-      ⚠️ **Re-scoped 2026-09-29. The recorded count of 1040 is gone and so is the knock.** WS01's
-      Security log was measured that day at **2065** events reaching back only to **2026-09-28
-      13:41 UTC** — a one-day horizon. The 2026-09-14/16 knock has been discarded.
-      **What the frame can now show** is a fresh knock plus the live count, with `hostname` at the
-      top **and the oldest record's timestamp in the frame**, so the image states the window it
-      covers rather than implying one it does not. **Use the uncapped query** — see the correction
-      at Step 7.1; the run sheet's original `-MaxEvents 20` form cannot find a knock older than a
-      few minutes.
+- [x] `06-5152-ws01-empty.png` — **captured 2026-10-01, 11:14 local, WS01.** `hostname → WS01`
+      in frame, so it is self-attributing. Beneath it: **879** total 5152 events proving the
+      channel records, the oldest at **2026-09-30 01:30:16 UTC** so the window demonstrably
+      covers the knock, and the **uncapped** 9999 query returning **nothing** — the knock having
+      been made at 10:04:19 UTC the same morning. The instrument alive and the instrument silent,
+      in one frame.
+      **Captured with the corrected query.** The run sheet's original `-MaxEvents 20` form could
+      not have found it; see the correction at Step 7.1.
 
 Then, in your own words: who probed what, how you know, and — the harder half — **what none of
 the four instruments could have told you**, which is the module's actual result.
 
 ---
+
+---
+
+# Run log — Sitting 5 (2026-10-01, both VMs) — MODULE CLOSED
+
+**The sitting that finished the module.** Matrix rows 1 and 3 re-run from scratch, both missing
+screenshots captured and filed, and one open question closed. All times UTC unless marked local;
+both VMs confirmed on **UTC+1 WAT** via `Get-TimeZone`.
+
+### Pre-flight — both instruments proved before either knock
+
+`Filtering Platform Packet Drop` read **Failure** on **both** machines — it survived every reboot
+since 2026-09-15, which had been unknown. DC01 confirmed at matrix row 1: nothing listening on
+9999, no surviving lab rules. **This is the step Finding 5 exists because of**; the 2026-09-15
+version of knock 1 was run against a switched-off channel and its silence meant nothing.
+
+### The three knocks
+
+| | UTC | Setup on DC01 | Result |
+|---|---|---|---|
+| **1** | 10:04:19 | nothing | ×3 `TcpTestSucceeded: False`, `PingSucceeded: True` |
+| **2** | 10:31:29 | `TcpListener` + **allow** rule | `TcpTestSucceeded: True` |
+| **3** | 10:41:41 | `TcpListener` + **block** rule | `TcpTestSucceeded: False` |
+
+### Knock 1 — WS01 records nothing about its own outbound knock
+
+**879** × 5152 on WS01, oldest **2026-09-30 01:30:16 UTC**, and **nothing** matching 9999. The
+window covers the knock by thirty-two hours and the channel is demonstrably recording, so the
+silence is evidence. → `06-5152-ws01-empty.png`.
+
+> **Observation, no cause established.** The 5152 count fell from **2065** (2026-09-29) to **879**
+> today on the same host and ID. Less uptime between sittings is the obvious guess and is **not
+> established**; `wevtutil gli Security` and `oldestRecordNumber` would discriminate. Not run.
+
+### Knock 2 — the Sysmon `And` question is CLOSED, and H1 holds
+
+Sysmon Event 3 on WS01 went **13 → 14**, and the newest event read `DestinationPort 9999` at the
+knock time. **H2 is dead: Module 07's Step 3.2 edit did not disable Module 06's 9999 rule.**
+
+**Two `DestinationPort` conditions in one `NetworkConnect` group behave as OR, although the live
+config readback prints them combined with `And`.** Behaviour established; **mechanism not** —
+whether `And` is cosmetic, applies only across differing fields, or something else is untested,
+and no cause is asserted here.
+
+> **New trap, and it is a nasty one.** *A readback that passes is not a readback that is readable.*
+> The live config printed a rule that is unsatisfiable read literally, and that rule works. Every
+> check this lab knows how to run — apply, `Configuration updated`, live readback showing both
+> values — passed in both worlds. Only firing a packet at the port could tell them apart.
+
+### Knock 3 — matrix row 3, and the newest event was the wrong event
+
+`-MaxEvents 1` on DC01 returned a 5152 from **10:55:17** for **port 389** (LDAP), `Filter Origin
+Stealth` — unrelated background noise fourteen minutes after the knock. **The "newest matching
+event is not the right event" trap, second instance in this lab** after Module 07's `-First 1`.
+Filtering by `StartTime` plus a 9999 match returned the real population: **5 events**, matching
+the **5** `pfirewall.log` lines exactly — **one knock, five SYN retransmissions**, counted
+consistently by both instruments. The 2026-09-14 lines show the identical five-line, fifteen-second
+shape.
+
+**The event, read in full:**
+
+| Field | Value |
+|---|---|
+| `Process ID` | **2688** |
+| `Application Name` | **`\device\harddiskvolume3\windows\system32\windowspowershell\v1.0\powershell.exe`** |
+| `Source Address` / `Port` | `10.0.0.20` / `49824` |
+| `Destination Address` / `Port` | `10.0.0.10` / **`9999`** |
+| `Protocol` | `6` (TCP) |
+| `Filter Origin` | **`{3698329f-420d-4331-9484-ddcab3740158}`** |
+| `Filter Run-Time ID` | `69620` |
+| `Layer Name` | **`Receive/Accept`** |
+
+**`Application Name` is a device path, not `C:\Windows\...`.** A hunt for `'*C:\Windows*'`
+returns nothing. **Third member of a family this lab keeps meeting** — `\REGISTRY\MACHINE\` not
+`HKLM\` (Module 03), `HKU\<SID>` not `HKCU` (Module 03), and now this. The earlier note
+recording this field as "powershell.exe" was an abbreviation, not what the log printed.
+
+### Two fields disagree with the 2026-09-14 run — NOT explained
+
+| Field | 2026-09-14 | 2026-10-01 |
+|---|---|---|
+| `Filter Origin` | `Query User Default` | `{3698329f-420d-4331-9484-ddcab3740158}` |
+| `Layer Name` | `Transport` | `Receive/Accept` |
+
+The known difference between the two runs is how the rule was made: **wf.msc wizard, Public
+profile only** then, **`New-NetFirewallRule -Profile Any`** today. **No cause is established for
+either field**, and the relationship between them is not established either.
+
+**The candidate explanation, explicitly unverified:** `New-NetFirewallRule` without `-Name`
+auto-generates a GUID as the rule's internal name, so the `Filter Origin` GUID may literally be
+*this rule* — which would mean today's drop was made by the explicit rule where 2026-09-14's was
+not, and would close the parked precedence question. **This was not tested.** See the closed-item
+note below.
+
+### `pfirewall.log` has not rotated in seventeen days
+
+The file still holds the **2026-09-14 10:36:37–10:36:52** lines from the original matrix row 3,
+alongside today's. **The Security log beside it on WS01 holds about one day.** The instrument that
+is structurally blind to stealth drops is the far more durable record of the drops it does catch —
+a real operational point, and it sharpens Finding 4 rather than merely illustrating it.
+
+### Cleanup — readback-verified
+
+Allow rule deleted and confirmed absent; block rule deleted and `Get-NetFirewallRule -DisplayName
+'*9999*'` returned nothing — **a wildcard readback, which also catches the case-variant names this
+module has been bitten by**. Listener stopped. **Audit switches deliberately left ON**, both VMs.
+
+### Closed by decision, 2026-10-01 — do not re-propose
+
+- ✖ **The `Filter Origin` GUID identification.** Would have been settled either by reading the
+  rule's `Name` before deletion, or afterwards from the **4948**, which carries `Rule ID` as a
+  field and therefore outlives the rule. **The analyst judged it unnecessary and closed the
+  module.** Consequence, stated plainly in the record rather than hidden: **Module 06's parked
+  precedence question stays open**, and the two-field disagreement above stays unexplained.
+- ✖ `06-sysmon3-zero.png` — permanently unobtainable, dropped 2026-09-25.
+- ✖ The RST probe, stealth-mode reconfiguration, and the 4688-rate re-measurement — closed
+  2026-09-29.
+
+### One error made and corrected in-session
+
+Two screenshots' taskbar clocks read an hour apart while arriving on the analyst's Mac five
+minutes apart, and a **timezone mismatch between the VMs was proposed as the cause**. `Get-TimeZone`
+on both returned **UTC+1 WAT**, killing it. The actual explanation: the WS01 frame was the
+*original* capture from an hour earlier — proven by its count of **879** and oldest record being
+byte-identical to the figures reported before knock 2, where a live log would have drifted.
+**A taskbar clock dates the capture, not the filing.** Recorded because the wrong explanation was
+asserted before the one-command check that refuted it, which is the failure mode CLAUDE.md's
+evidence-discipline section exists to prevent.
+
 
 # Findings
 
