@@ -3,8 +3,9 @@
 > **Runs on:** DC01 only. WS01 is not needed and should stay powered off
 > **Time:** ~2 hours, split across two sittings
 > **Roll back to:** `mod04-start` · **Snapshot before starting:** `mod08-start` (DC01)
-> **Status:** written 2026-10-01. **Not yet run.** Everything marked **prediction** is an
-> expectation to be tested, not a fact. Correct this file from the run.
+> **Status:** written 2026-10-01. **Sitting 1 complete 2026-10-12 (Steps 0–5) — see the run log
+> below.** Sitting 2 (Steps 6–12) not yet run. Everything marked **prediction** is an expectation
+> to be tested, not a fact. Correct this file from the run.
 
 ---
 
@@ -120,6 +121,132 @@ The two that matter most to a SOC analyst:
   machine that would be at fault.
 - **RID Master** — hands out the pools of numbers used to build new account SIDs. Without it you
   eventually cannot create accounts.
+
+---
+
+# Run log — Sitting 1 (2026-10-12, Steps 0–5 complete, DC01)
+
+Entirely read-only; nothing on DC01 was changed. WS01 stayed off. Only what was pasted back or
+shown in a screenshot is recorded as verified.
+
+## Every prediction in Steps 0–4 held
+
+| Step | Read | Result |
+|---|---|---|
+| 0.1 | `mod08-start` snapshot | **taken** (reported by the user) |
+| 0.2 | `hostname` | `DC01` |
+| 0.3 / 1.2 | `Get-ADDomain -Current LocalComputer` | populated; `DNSRoot` `corp.local`, `NetBIOSName` `CORP`, `DistinguishedName` `DC=corp,DC=local`, `DomainMode` `Windows2016Domain`, `DomainSID` `S-1-5-21-3536249948-3294943055-3998780783`, `ReplicaDirectoryServers` `{DC01.corp.local}`, `ReadOnlyReplicaDirectoryServers` `{}` |
+| 1.1 | `Get-ADForest` | `Domains` `{corp.local}`, `ForestMode` `Windows2016Forest`, `GlobalCatalogs` `DC01.corp.local`, `SchemaMaster` and `DomainNamingMaster` `DC01.corp.local` |
+| 1.3 | `Get-ADDomainController -Filter *` | **one** DC: `DC01`, `IPv4Address` `10.0.0.10`, `IsGlobalCatalog` `True`, `IsReadOnly` `False`, `Site` `Default-First-Site-Name`, `Windows Server 2022 Standard Evaluation` `10.0 (20348)`, `LdapPort` 389 |
+| 2.1 | `netdom query fsmo` | all five roles on DC01 |
+| 3.1 | NTDS `Parameters` | `DSA Database file` = `C:\Windows\NTDS\ntds.dit` |
+| 3.2 | `Get-SmbShare` | `ADMIN$`, `C$`, `IPC$`, `NETLOGON` (`C:\Windows\SYSVOL\sysvol\corp.local\SCRIPTS`), `SYSVOL` (`C:\Windows\SYSVOL\sysvol`) |
+| 3.3 | `Get-ChildItem C:/Windows/NTDS` | `ntds.dit` + `edb.chk`, `edb.log`, `edb00001.log`, `edbres00001.jrs`, `edbres00002.jrs`, `edbtmp.log`, `ntds.jfm`, `temp.edb` |
+| 4 | `Get-ADTrust -Filter *` | **no output** |
+
+Step 2.2 was not run separately — it asks for the same five fields `Get-ADForest` and `Get-ADDomain`
+had already returned in full, and `netdom` agreed with them.
+
+**Step 4's empty result is a genuine absence, and the evidence for that is specific:** wrong machine
+excluded by `hostname`; broken cmdlets or unreachable directory excluded by `Get-ADForest` returning
+`Domains: {corp.local}` from the same module, same host, same morning; no cap was used; there was no
+ID to mistype. **A populated result from the same tools, close in time, is what makes an empty one
+trustworthy.**
+
+**Step 1.2's SID prediction is untested, not confirmed.** Module 03 only recorded the `HKU` SID
+abbreviated (`S-1-5-21-…-500`), and whether that `-500` was the **domain** Administrator or WS01's
+**local** one was never recorded — the two have different prefixes. The comparison cannot be made
+from the notes.
+
+**Step 3.2, the analyst's sentence on why SYSVOL is worth watching** (verbatim): *"To see which
+endpoint accessed the file."*
+
+## Step 5 — the measurement
+
+| | Value |
+|---|---|
+| `Directory Service` `RecordCount` | **1027** |
+| `Directory Service` `MaximumSizeInBytes` | **1,052,672** (~1 MB — the same as WS01's LocalSessionManager) |
+| Security `oldestRecordNumber` | **1** |
+| Oldest Security event | **ID 4688, 2026-07-28** (displayed date) |
+
+**DC01's Security log has never discarded anything and holds its entire history — about 76 days,
+2026-07-28 → 2026-10-12. WS01's holds about one day** (measured 2026-09-29). The oldest event is not
+a **1102**, so the log was not cleared. **No cause is established for the difference between the
+hosts**; the first thing to compare is each log's `maxSize` from `wevtutil gli Security`, which was
+not read back today.
+
+**Consequence for sitting 2:** DC01 has no rotation deadline at its current rate, so Step 9's
+evidence is not on the overnight clock Module 07's was. Step 7 adds a new audit subcategory at an
+unmeasured rate, so **Step 9.5's export-first still stands**.
+
+**`Directory Service`, newest 200 events, by ID** (`Group-Object Id`; counts sum to exactly 200):
+
+| Count | Event IDs |
+|---|---|
+| 18 | 2405, 2406 |
+| 12 | 330 |
+| 9 | 1000, 1394, 1539, 2041, 2120, 2121, 2886, 3041, 3051, 3054 |
+| 8 | 1869, 3027, 3033 |
+| 6 | 102, 105, 326, 700, 701, 1004 |
+| 1 | 702, 703 |
+
+**Resolved on the box:** **1000 = "Microsoft Active Directory Domain Services startup complete."** So
+AD DS started **nine times** inside those 200 events. **Hypothesis, not established:** the counts
+cluster at 6/8/9 (18 = 2 × 9), which is what a fixed batch written once per startup would look like.
+Sharing a count with 1000 is suggestive, not proof; the times of the 1000s were not read.
+
+## The domain is older than the README says
+
+| Source | Date |
+|---|---|
+| `Get-ADObject 'DC=corp,DC=local' -Properties whenCreated` | **2026-08-02 4:24:22 PM** (displayed in DC01's UTC+1; **15:24:22 UTC** assuming PowerShell converted from AD's stored UTC, which is recall, not checked) |
+| `edb00001.log`, `edbres00001.jrs`, `edbres00002.jrs`, `edbtmp.log` LastWriteTime | **8/2/2026 4:24 PM** — the same minute |
+| Oldest DC01 Security event | **2026-07-28** |
+| Oldest WS01 Security event, recorded in CLAUDE.md on 2026-08-24 | **28 July** |
+| README progress log | VMs built **2026-08-02**, DC01 promoted **2026-08-09** |
+
+The directory and the filesystem agree: **`corp.local` was created on 2026-08-02**, not 2026-08-09.
+Both hosts were logging from 28 July, before the README's build date. **The repository's first
+commit is 2026-08-09 13:36**, so both Module 00 progress-log rows were written retrospectively on or
+after that date — consistent with them recording the write-up rather than the work, **but that is
+not established.** The README has been annotated from this evidence rather than silently re-dated.
+
+## Observations, no cause established
+
+- **Every file in `C:\Windows\NTDS` is a round number of bytes.** `ntds.dit` is exactly **16 MiB**
+  (16,777,216); the four 2 August files are exactly **10 MiB** each (10,485,760). That looks like
+  pre-allocation — the same shape as event-log files, whose size says nothing about how full they
+  are — but **this is not established**, so the file size must not be read as "the domain holds
+  16 MB of data".
+- **`ntds.dit`, `edb.chk`, `ntds.jfm` and `temp.edb` all read 9:13 AM today**, four minutes before
+  the first screenshot. Plausibly the boot; not established.
+
+## Traps this sitting added
+
+- **`(…).Count` printed nothing for a single DC; `@(…).Count` printed `1`.** Verified. The
+  explanation offered in-session — one returned object is not a list, and an AD object answers
+  `.Count` with its own (absent) property — **predicted the `@( )` result, but is not proven.** The
+  practical rule stands either way: **wrap a count in `@( )`, or a population of one prints as
+  blank** — no error, and blank reads like zero. Another member of the "silence that looks like an
+  answer" family.
+- **PowerShell truncates long values with `...` in list view.** `OperationMasterRoles` displayed
+  `{SchemaMaster, DomainNamingMaster, PDCEmulator, RIDMaster...}` — `InfrastructureMaster` hidden,
+  not absent. **Truncated display is not missing data.**
+- **A misspelled channel name errors loudly — confirmed on a second host.** `'Directory Sercices'`
+  and `'Directory Sercice'` both returned *"There is not an event log on the localhost computer
+  that matches…"*. Only a channel that exists can fool you.
+- **Counting objects by eye in list view.** One DC's output is a ~20-line block, and the lines were
+  counted as objects (21). Let PowerShell count.
+
+## Still open from sitting 1
+
+- **`maxSize`** of DC01's Security log, to compare against WS01's
+- *(optional)* the `TimeCreated` of the `1000` events, which would test the once-per-startup
+  hypothesis and date DC01's restarts
+- **Screenshots exist on the Windows machine and are not filed** — frames covering Steps 0.2/0.3,
+  1.3, 3.2/3.3 and 5.2. They do not map one-to-one onto Step 12's checklist; reviewed and filed
+  deliberately, not by filename
 
 ---
 
@@ -701,29 +828,37 @@ forest. Write it into this file, from **command output** rather than recollectio
 
 | | Value | Read from |
 |---|---|---|
-| Forest name | | `Get-ADForest` |
-| Forest mode | | `Get-ADForest` |
-| Domains in forest | | `Get-ADForest` |
-| Domain DNS root / NetBIOS | | `Get-ADDomain` |
-| Domain distinguished name | | `Get-ADDomain` |
-| Domain SID | | `Get-ADDomain` |
-| Domain controllers | | `Get-ADDomainController -Filter *` |
-| Global catalog | | `Get-ADDomainController -Filter *` |
-| Site | | `Get-ADDomainController -Filter *` |
-| Trusts | | `Get-ADTrust -Filter *` |
-| `ntds.dit` path | | NTDS registry parameters |
-| SYSVOL / NETLOGON shared | | `Get-SmbShare` |
-| Security log horizon | | `wevtutil gli Security` |
+*Filled 2026-10-12 from sitting 1's command output.*
+
+| | Value | Read from |
+|---|---|---|
+| Forest name | `corp.local` | `Get-ADForest` |
+| Forest mode | `Windows2016Forest` | `Get-ADForest` |
+| Domains in forest | `{corp.local}` — one | `Get-ADForest` |
+| Domain DNS root / NetBIOS | `corp.local` / `CORP` | `Get-ADDomain` |
+| Domain mode | `Windows2016Domain` | `Get-ADDomain` |
+| Domain distinguished name | `DC=corp,DC=local` | `Get-ADDomain` |
+| Domain SID | `S-1-5-21-3536249948-3294943055-3998780783` | `Get-ADDomain` |
+| Domain created | 2026-08-02 (displayed 4:24:22 PM, UTC+1) | `Get-ADObject … -Properties whenCreated` |
+| Domain controllers | one — `DC01`, `10.0.0.10`, Windows Server 2022 (20348), writable | `Get-ADDomainController -Filter *` |
+| Global catalog | `DC01` | `Get-ADDomainController -Filter *` |
+| Site | `Default-First-Site-Name` | `Get-ADDomainController -Filter *` |
+| Trusts | **none** | `Get-ADTrust -Filter *` |
+| `ntds.dit` path | `C:\Windows\NTDS\ntds.dit` | NTDS registry parameters |
+| SYSVOL / NETLOGON shared | yes — `C:\Windows\SYSVOL\sysvol`, `…\sysvol\corp.local\SCRIPTS` | `Get-SmbShare` |
+| Security log horizon | **never wrapped** — `oldestRecordNumber` 1, oldest event 2026-07-28 | `wevtutil gli Security` |
 
 ### 10.2 The FSMO role map
 
 | Role | Scope | Held by |
 |---|---|---|
-| Schema Master | Forest | |
-| Domain Naming Master | Forest | |
-| PDC Emulator | Domain | |
-| RID Master | Domain | |
-| Infrastructure Master | Domain | |
+| Schema Master | Forest | `DC01.corp.local` |
+| Domain Naming Master | Forest | `DC01.corp.local` |
+| PDC Emulator | Domain | `DC01.corp.local` |
+| RID Master | Domain | `DC01.corp.local` |
+| Infrastructure Master | Domain | `DC01.corp.local` |
+
+All five read from `Get-ADForest`/`Get-ADDomain` **and** `netdom query fsmo`, which agreed.
 
 ### 10.3 Two sentences in your own words
 
@@ -848,8 +983,10 @@ would have.
 
 ### Open question — how long does DC01 keep anything?
 
-**Measured in Step 5.3.** WS01 holds roughly one day. DC01's horizon has never been measured, and
-every conclusion in Modules 01, 06 and 07 that rests on a DC01 timestamp depends on it.
+**Measured 2026-10-12 — answered.** DC01's Security log has **never wrapped**: `oldestRecordNumber`
+1, oldest event a 4688 on 2026-07-28, not a 1102. It holds its entire ~76-day history, against
+WS01's ~1 day. **Why the two hosts differ is not established**; `maxSize` on each is the first
+comparison.
 
 ### Declared limitation — no trusts, no replication
 
@@ -897,7 +1034,16 @@ journal**, not deferred work. Step 4 records the empty baseline and the reason.
 
 ## Notes & gotchas
 
-**To be filled in from the run.** Carried in from earlier modules as things to watch for here:
+**From the run (sitting 1, 2026-10-12):**
+
+- **Count with `@( )`.** `(Get-ADDomainController -Filter *).Count` printed **nothing** for one DC;
+  `@(Get-ADDomainController -Filter *).Count` printed `1`. Blank, no error, reads like zero.
+- **`...` at the end of a value is display truncation, not missing data** —
+  `OperationMasterRoles` hid `InfrastructureMaster` this way.
+- **A misspelled channel name errors loudly** (`'Directory Sercice'`); only a real channel can
+  return a misleading silence.
+
+**Carried in from earlier modules** as things to watch for here:
 
 - **Every command in this module runs on DC01.** A query on WS01 returns empty rather than an
   error. Wrong machine is the first entry on the empty-output checklist for a reason.

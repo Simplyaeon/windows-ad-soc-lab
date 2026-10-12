@@ -66,7 +66,7 @@ starts from).
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
-| 08 | Domains, Forests & DCs | 5136/5137/5141 | 📝 Run sheet written 2026-10-01, not yet run |
+| 08 | Domains, Forests & DCs | 5136/5137/5141 | 🟡 **Sitting 1 complete** (2026-10-12, Steps 0–5, read-only); sitting 2 next |
 | 09 | OUs & Delegation | 5136, 4662, 5141 | ⬜ Planned |
 | 10 | Group Policy (GPO) | 5136, 4739, 5145 | ⬜ Planned |
 | 11 | DNS | 256/257 | ⬜ Planned |
@@ -510,7 +510,13 @@ Every lab (via the template) is laid out identically:
   returns `NoMatchingEventsFound` while the events sit there; a wrong registry key gives the same
   blank column as a wrong `-Name`; `Get-LocalGroupMember` throws **1789** when the DC is down;
   `[xml]` on an un-indexed array fails with a message that reads like a parser fault.
-- ⬜ Modules 08–12 planned but not yet expanded
+- 🟡 **Module 08 sitting 1 complete** (2026-10-12, DC01, Steps 0–5, read-only). Every prediction
+  held — one forest, one domain, **one DC holding all five FSMO roles**, `ntds.dit` and SYSVOL
+  located, `Get-ADTrust` empty and shown to be a genuine absence. **DC01's Security log has never
+  wrapped** (`oldestRecordNumber` 1, oldest event 2026-07-28, ~76 days) against WS01's ~1 day; no
+  cause established. **The README's Module 00 dates were wrong** — `whenCreated` dates the domain
+  to 2026-08-02, not 08-09. Forest inventory and FSMO map are filled into Step 10.
+- ⬜ Modules 09–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — **`main` was level
   with `origin/main` at `c5f1c39` on 2026-09-29**, including Module 07's sittings 1–3. The earlier
   "committed locally and not pushed" note was **stale**. Read `git log origin/main..main` rather
@@ -551,7 +557,19 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-### 🚩 START HERE — the next sitting (set 2026-10-01, after Module 06 closed)
+### 🚩 START HERE — the next sitting (set 2026-10-12, after Module 08 sitting 1)
+
+**Next: Module 08 sitting 2 — Steps 6–12, DC01 only.** Sitting 1 ran 2026-10-12 and is written up
+in the run log at the top of `labs/08-domains-forests-dcs.md`. Sitting 2 is the first one that
+**changes** DC01: it reads the four `DS Access` gates, opens `Directory Service Changes`, sets a SACL
+on a scoped `LabAudit` OU, makes three changes and hunts them. **Step 6.1's before-state readback
+must be captured before Step 7 changes anything** — it cannot be retaken.
+
+**Carry in from sitting 1:** DC01's Security log has never wrapped, so there is no overnight
+rotation deadline — but export first (Step 9.5) still stands. Small open items: `maxSize` of DC01's Security log, and filing sitting 1's screenshots after
+reading them.
+
+### Previous START HERE (set 2026-10-01, after Module 06 closed) — superseded
 
 **✅ PART I IS COMPLETE.** Modules 00–07 are all closed, with findings written and evidence in
 `assets/`. **Module 06 was finished on 2026-10-01** by the `TcpListener` sitting: matrix rows 1
@@ -605,10 +623,8 @@ adding a second DC or forest** — that was considered and declined on 2026-10-0
 
 ---
 
-1. 🚩 **NEXT SESSION — Module 08, sitting 1 (DC01 only, read-only).** The run sheet is written:
-   `labs/08-domains-forests-dcs.md`. Steps 0–5 change nothing on the machine, so it is a safe
-   sitting to run at any time. **Part I has no outstanding lab work.**
-2. **Module 08 sitting 2** then opens `Directory Service Changes` and tests whether Modules 02 and
+1. ✅ **Module 08 sitting 1 — done 2026-10-12** (Steps 0–5, read-only). See the module's run log.
+2. 🚩 **NEXT SESSION — Module 08 sitting 2** opens `Directory Service Changes` and tests whether Modules 02 and
    03's gate pattern holds in a third store. Nothing optional stands anywhere between here and
    Module 09 — every "could also test" item across Modules 03, 06 and 07 is **closed as won't-do**
    and listed under section C above and in each module's own run log. **Do not re-propose them.**

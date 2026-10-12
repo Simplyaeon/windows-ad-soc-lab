@@ -35,7 +35,21 @@ rather than trying to inspect anything directly.
 
 ## Where things stand
 
-### 🚩 START HERE — the next sitting (set 2026-10-01, after Module 06 closed)
+### 🚩 START HERE — the next sitting (set 2026-10-12, after Module 08 sitting 1)
+
+**Next: Module 08 sitting 2 — Steps 6–12, DC01 only.** Sitting 1 (Steps 0–5, read-only) ran
+2026-10-12 and is written up in the run log near the top of `labs/08-domains-forests-dcs.md`; every
+prediction held, and Step 10's inventory and FSMO tables are already filled from its output.
+**Sitting 2 is the first to change DC01** — capture Step 6.1's `DS Access` readback *before* Step 7.
+Small carry-overs: `maxSize` of DC01's Security log, and
+sitting 1's screenshots (on the Windows machine, not yet read or filed).
+
+**Measured 2026-10-12: DC01's Security log has NEVER wrapped** — `oldestRecordNumber` 1, oldest
+event a 4688 on 2026-07-28 (not a 1102, so never cleared), ~76 days held. WS01 holds ~1 day. **No
+cause established for the difference.** **The README's Module 00 dates were wrong:** the domain
+object's `whenCreated` is 2026-08-02, not 08-09 — annotated in the README, not re-dated.
+
+### Previous START HERE (set 2026-10-01, after Module 06 closed)
 
 **✅ PART I IS COMPLETE.** Modules 00–07 are all closed. **Module 06 was finished on 2026-10-01**
 by the `TcpListener` sitting — matrix rows 1 and 3 re-run from scratch, both outstanding
@@ -47,7 +61,7 @@ work anywhere in Part I.**
 
 | | On | What |
 |---|---|---|
-| **A** | DC01 | **Module 08 sitting 1** — Steps 0–5, entirely read-only. Includes **the first ever measurement of DC01's Security log horizon** |
+| ~~A~~ | DC01 | ✅ **Module 08 sitting 1 — done 2026-10-12** |
 | **B** | DC01 | **Module 08 sitting 2** — Steps 6–12, the audit gates and the detection half |
 | **C** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
 
@@ -931,6 +945,11 @@ commands creating them had never been run.
   world where the rule was dead and the world where it was fine.** Only firing a packet at the
   port could separate them. A readback proves a value is *present*, not that you have read its
   semantics correctly.
+- **Count with `@( )`.** `(Get-ADDomainController -Filter *).Count` printed **blank** for one DC;
+  `@(…).Count` printed `1`. Verified DC01 2026-10-12; the mechanism offered is unproven. A
+  population of one otherwise prints as nothing, which reads like zero.
+- **`...` at the end of a list-view value is display truncation** — `OperationMasterRoles` hid
+  `InfrastructureMaster` this way. Not missing data.
 - **A taskbar clock dates the capture, not the filing.** Two screenshots whose clocks read an hour
   apart arrived five minutes apart; a timezone mismatch between the VMs was asserted as the cause
   before `Get-TimeZone` (UTC+1 on both) refuted it. The real cause was one frame being an older
