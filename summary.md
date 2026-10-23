@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-09-25_
+_Last updated: 2026-10-23_
 
 ---
 
@@ -33,11 +33,14 @@ starts from).
 | `README.md` | Repo landing page — topology diagram, module index with status, repo layout, GitHub push-safety warnings |
 | `SOC-Analyst-Roadmap.md` | The full 12-module plan across Windows Administration (Part I) and Active Directory (Part II), plus a mini-SIEM cross-cutting module and an 8-week pacing table |
 | `labs/00-lab-build.md` | **Module 00** — VM creation, Windows installs, `lab-net` setup, DC promotion and domain join, with troubleshooting |
-| `labs/01-users-and-groups.md` | **Module 01, fully expanded** — the reference implementation every other lab follows |
+| `labs/01-users-and-groups.md` | **Module 01, complete** — the reference implementation every other lab follows |
+| `labs/02-ntfs-permissions.md` | **Module 02, complete** — NTFS permissions and file auditing; run 2026-09-05 → 2026-09-08, WS01. The four-gate object-access model |
 | `labs/03-windows-registry.md` | **Module 03, complete** — registry persistence, native 4657 vs Sysmon 13; written 2026-09-10, run 2026-09-10 → 2026-09-12, corrected from the run, two findings |
-| `labs/06-windows-firewall.md` | **Module 06, nearly complete** — written 2026-09-13, four sittings 2026-09-13 → 2026-09-16, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
-| `labs/07-remote-desktop.md` | **Module 07, written 2026-09-22, Steps 0–9 complete 2026-09-29** — one RDP session reconstructed from four separate logbooks; the join key is the exercise. **Three of the sheet's own predictions are now dead**: enabling RDP writes 4947 not 4946; a failed RDP logon is **Logon Type 3**, not 10; and turning NLA off changed **nothing** in any of the three logs |
-| `labs/04-event-viewer-logging-model.md` | **Module 04, expanded** — the tooling module; written 2026-08-24, not yet run |
+| `labs/04-event-viewer-logging-model.md` | **Module 04, complete** — the tooling module; written 2026-08-24, run across three sittings, two findings (evidence loss by volume, log clearing) |
+| `labs/05-powershell-for-defenders.md` | **Module 05, complete** (2026-09-03) — the pipeline built one verb at a time; 4688 + 4104 as a matched pair for one encoded execution |
+| `labs/06-windows-firewall.md` | **Module 06, complete** (2026-10-01) — five sittings 2026-09-13 → 2026-10-01, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
+| `labs/07-remote-desktop.md` | **Module 07, complete** (2026-09-30) — five sittings; one RDP session reconstructed from four separate logbooks; the join key is the exercise. **Four of the sheet's own predictions died**: enabling RDP writes 4947 not 4946; a failed RDP logon is **Logon Type 3**, not 10; turning NLA off changed **nothing** in any of the three logs; and 4778/4779 needed a third switch |
+| `labs/08-domains-forests-dcs.md` | **Module 08, in progress** — written 2026-10-01, DC01 only. Sitting 1 (Steps 0–5, read-only) ran 2026-10-12; sitting 2 (Steps 6–12) not yet run |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
 | `assets/` | Folder for screenshots / evidence referenced by the labs |
@@ -248,14 +251,14 @@ Every lab (via the template) is laid out identically:
   command-line dump, and the blank `ParentImage` shot. Note that two carry this host's
   **unredacted machine SID**; a deliberate call for a throwaway isolated VM, not a pattern to
   repeat.
-- 🟡 **Module 06 (Windows Firewall) — nearly complete.** Written 2026-09-13, run across four
-  sittings 2026-09-13 → 2026-09-16 on **both VMs** (the first two-VM module since 01). The run
-  sheet is rewritten from the run, **all five findings are complete** (observation → inference
-  → recommendation), and **ten screenshots are filed in `assets/`**. A closeout sitting on
-  **2026-09-25** filled the Step 8 baseline table from command output on both VMs, so the only
-  thing outstanding is **three screenshots** (`06-5152-ws01-empty.png`, **`06-5152-listening.png`**
-  — missed by every status note until 2026-09-29 — and `06-sysmon3-zero.png`, which is permanently
-  unobtainable).
+- ✅ **Module 06 (Windows Firewall) — COMPLETE (2026-10-01), five sittings.** Written 2026-09-13,
+  run 2026-09-13 → 2026-10-01 on **both VMs** (the first two-VM module since 01). The run sheet is
+  rewritten from the run, **all five findings are complete** (observation → inference →
+  recommendation), the Step 8 baseline table is filled from command output, and **twelve
+  screenshots are filed in `assets/`**. The fifth sitting (2026-10-01) captured the last two
+  (`06-5152-ws01-empty.png`, `06-5152-listening.png`) and settled the Sysmon `And` question;
+  `06-sysmon3-zero.png` is permanently unobtainable and marked dropped. The history below is kept
+  as it was written during the run.
 
   **The module's thesis was wrong, and disproving it is the result.** It was built on "the
   text file is thin, event 5157 is rich." Three TCP knocks from WS01 to DC01 port 9999 —
@@ -484,10 +487,11 @@ Every lab (via the template) is laid out identically:
   wrong"** — 4946-vs-4947, the switched-off 4778/4779, the NLA null result, and an expectation
   that could not fail.
 
-  **Resume at Step 10** — lab-state readbacks, then Step 11's remaining screenshots. **Open and carried forward:** H3's reboot test; the **unidentified 4625 at 00:29:46 UTC
+  **Steps 10 and 11 were completed in sittings 4 and 5** (below). **Open and carried forward:** H3's reboot test; the **unidentified 4625 at 00:29:46 UTC
   on 2026-09-29**, fields never read; `0xC000006A` vs `0xC0000064` (fail as a nonexistent user —
   no lockout cost); and whether connecting by IP is what forced **NTLM** rather than Kerberos.
-- 🟡 **Sitting 4 (2026-09-29) — Steps 10 and 11, WS01 only.** DC01 was off, which is the only
+- ✅ **Module 07 sitting 4 (2026-09-29) — Steps 10 and 11, WS01 only;** the last Step 10 row was
+  closed in sitting 5 (2026-09-30) once DC01 was booted. DC01 was off, which is the only
   reason anything remains. **The opening command destroyed the sitting's own plan and that was
   the result:** WS01's Security log was measured at a **one-day horizon** (2065 × 5152, oldest
   2026-09-28 13:41:34 UTC), so the 2026-09-14/16 knock and the 2026-09-25 4947 burst were
@@ -517,10 +521,9 @@ Every lab (via the template) is laid out identically:
   cause established. **The README's Module 00 dates were wrong** — `whenCreated` dates the domain
   to 2026-08-02, not 08-09. Forest inventory and FSMO map are filled into Step 10.
 - ⬜ Modules 09–12 planned but not yet expanded
-- ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — **`main` was level
-  with `origin/main` at `c5f1c39` on 2026-09-29**, including Module 07's sittings 1–3. The earlier
-  "committed locally and not pushed" note was **stale**. Read `git log origin/main..main` rather
-  than trusting this line either way
+- ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — Module 08 sitting 1
+  (`eccab40`) and this summary refresh pushed on 2026-10-23. Read `git log origin/main..main`
+  rather than trusting this line either way
 - ✅ Module 01 evidence in `assets/` (six PNGs, spaceless `01-*` scheme); Finding 2 closed
 - ✅ Module 04 evidence complete: eight PNGs in `assets/`, all three custom views built and
   exported to `assets/xml/` (the reusable deliverable)
