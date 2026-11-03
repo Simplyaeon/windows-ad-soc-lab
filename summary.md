@@ -2,7 +2,7 @@
 
 A running summary of what has been set up in this repo and where things stand.
 
-_Last updated: 2026-10-23_
+_Last updated: 2026-11-03_
 
 ---
 
@@ -40,7 +40,8 @@ starts from).
 | `labs/05-powershell-for-defenders.md` | **Module 05, complete** (2026-09-03) — the pipeline built one verb at a time; 4688 + 4104 as a matched pair for one encoded execution |
 | `labs/06-windows-firewall.md` | **Module 06, complete** (2026-10-01) — five sittings 2026-09-13 → 2026-10-01, rewritten from the run; the first two-VM module since 01. A knock on a closed port is invisible to `pfirewall.log`, to 5157, to 4688 **and to Sysmon Event 3** — visible only as **5152**, which cannot name the sender. All five findings complete |
 | `labs/07-remote-desktop.md` | **Module 07, complete** (2026-09-30) — five sittings; one RDP session reconstructed from four separate logbooks; the join key is the exercise. **Four of the sheet's own predictions died**: enabling RDP writes 4947 not 4946; a failed RDP logon is **Logon Type 3**, not 10; turning NLA off changed **nothing** in any of the three logs; and 4778/4779 needed a third switch |
-| `labs/08-domains-forests-dcs.md` | **Module 08, in progress** — written 2026-10-01, DC01 only. Sitting 1 (Steps 0–5, read-only) ran 2026-10-12; sitting 2 (Steps 6–12) not yet run |
+| `labs/08-domains-forests-dcs.md` | **Module 08, complete** (2026-11-03) — DC01 only. Sitting 1 (Steps 0–5, read-only) 2026-10-12; sitting 2 (Steps 6–9, 11) 2026-10-23, **three findings**; sitting-1 screenshots recaptured and Step 10.3 filed 2026-11-03 |
+| `labs/09-ous-and-delegation.md` | **Module 09, run sheet written 2026-11-03, not yet run** — DC01 only, two sittings. Does delegating control of an OU write anything to the log, and does using it? |
 | `templates/module-lab-template.md` | Reusable skeleton to keep every module structured identically |
 | `.gitignore` | Excludes VM disk images, ISOs, exported logs, and secrets from GitHub |
 | `assets/` | Folder for screenshots / evidence referenced by the labs |
@@ -69,8 +70,8 @@ starts from).
 ### Part II — Active Directory
 | # | Module | Core Event IDs | Status |
 |---|--------|----------------|--------|
-| 08 | Domains, Forests & DCs | 5136/5137/5141 | 🟡 **Sitting 1 complete** (2026-10-12, Steps 0–5, read-only); sitting 2 next |
-| 09 | OUs & Delegation | 5136, 4662, 5141 | ⬜ Planned |
+| 08 | Domains, Forests & DCs | **5136**/5137, 5141 (never fired) | ✅ **Complete** (2026-11-03) |
+| 09 | OUs & Delegation | 5136, 4724, 4662, 5139 | 📝 Run sheet written, not run |
 | 10 | Group Policy (GPO) | 5136, 4739, 5145 | ⬜ Planned |
 | 11 | DNS | 256/257 | ⬜ Planned |
 | 12 | Kerberos & LDAP (capstone) | 4768, 4769, 4771, 4662 | ⬜ Planned |
@@ -520,7 +521,29 @@ Every lab (via the template) is laid out identically:
   wrapped** (`oldestRecordNumber` 1, oldest event 2026-07-28, ~76 days) against WS01's ~1 day; no
   cause established. **The README's Module 00 dates were wrong** — `whenCreated` dates the domain
   to 2026-08-02, not 08-09. Forest inventory and FSMO map are filled into Step 10.
-- ⬜ Modules 09–12 planned but not yet expanded
+- 🟡 **Module 08 sitting 2 complete** (2026-10-23, DC01, Steps 6–9 and 11); **three findings
+  written.** `Directory Service Changes` read **No Auditing** and was switched on, and a scoped
+  `LabAudit` OU got a SACL auditing `CreateChild, WriteProperty`. **The control held:** the only
+  5137 on DC01 is `lab_dirtest`, created inside the audited OU, and none exists for `LabAudit`,
+  created before its SACL. So the subcategory + SACL pattern now holds in **three stores of three**
+  (Finding 1). **But the unaudited OU still left a trace.** A 5136 pair at 09:42:37 UTC recorded the
+  **domain root's** security descriptor gaining `Everyone: AccessDenied (DeleteChild)`, which was
+  diffed on the box with `Compare-Object` and decoded with `ConvertFrom-SddlString`. The likely
+  cause is the OU's accidental-deletion protection, which is not established. **The entry outlived
+  the OU** and is recorded lab state. **A 5136 pair carries before and after values**, joined by
+  `OpCorrelationID`, observed on `nTSecurityDescriptor` only (Finding 2). **One user creation wrote
+  1 × 5137 + 3 × 5136**, so a 5136 count overstates deliberate changes, and **deletes wrote no 5141,
+  twice**. The leading hypothesis is that the SACL audited no delete right; it is untested (Finding 3).
+  Two discriminating tests were offered and declined; both are listed as open questions in the
+  module. Security log exported to `C:\evidence\08-dc01-security.evtx` on DC01. Five screenshots filed.
+- ✅ **Module 08 complete** (2026-11-03). The four sitting-1 screenshots had **never been taken**, so
+  they were recaptured from the same read-only commands, and every value matched the 2026-10-12 run
+  log. Step 10.3 is filed: the first answer is the analyst's own, and the second was written by Claude
+  at the analyst's request and is labelled as such. **DC01's desktop watermark read "Windows License
+  is expired"** in a 2026-11-03 frame, which contradicts the 2026-09-04 rearm note below. Recorded,
+  not acted on.
+- 📝 **Module 09 run sheet written** (2026-11-03, `labs/09-ous-and-delegation.md`), not yet run.
+- ⬜ Modules 10–12 planned but not yet expanded
 - ✅ Git repository pushed to `github.com/Simplyaeon/windows-ad-soc-lab` — Module 08 sitting 1
   (`eccab40`) and this summary refresh pushed on 2026-10-23. Read `git log origin/main..main`
   rather than trusting this line either way
@@ -560,17 +583,25 @@ Modules 01/04/05 is sound and needs no change.
 
 ## Next steps
 
-### 🚩 START HERE — the next sitting (set 2026-10-12, after Module 08 sitting 1)
+### 🚩 START HERE — the next sitting (set 2026-11-03, after Module 08 closed)
 
-**Next: Module 08 sitting 2 — Steps 6–12, DC01 only.** Sitting 1 ran 2026-10-12 and is written up
-in the run log at the top of `labs/08-domains-forests-dcs.md`. Sitting 2 is the first one that
-**changes** DC01: it reads the four `DS Access` gates, opens `Directory Service Changes`, sets a SACL
-on a scoped `LabAudit` OU, makes three changes and hunts them. **Step 6.1's before-state readback
-must be captured before Step 7 changes anything** — it cannot be retaken.
+**Module 08 is complete.** Next is **Module 09 sitting 1** (`labs/09-ous-and-delegation.md`,
+Steps 0–4, DC01 only): snapshot `mod09-start`, build the `Corp` OU tree with a SACL that audits
+`Modify permissions`, a SACL-less `Lab09Control` OU beside it, then move `asmith` and WS01 in and
+create `Helpdesk-Ops` / `hd_tech`. Sitting 2 (Steps 5–7, 9) delegates password reset on both OUs and
+reads what the log kept.
 
-**Carry in from sitting 1:** DC01's Security log has never wrapped, so there is no overnight
-rotation deadline — but export first (Step 9.5) still stands. Small open items: `maxSize` of DC01's Security log, and filing sitting 1's screenshots after
-reading them.
+**DC01 lab state Module 09 starts from:** the domain root's DACL carries **`(D;;DC;;;WD)`**
+(Everyone denied DeleteChild, added 2026-10-23 09:42:37 UTC, most likely by creating a protected
+OU; left in place deliberately), and `Directory Service Changes` = **Success**.
+
+### Superseded START HERE (set 2026-10-23, after Module 08 sitting 2)
+
+Module 08's desk close-out (10.3 and four screenshots) was next; it was done 2026-11-03.
+
+### Superseded START HERE (set 2026-10-12, after Module 08 sitting 1)
+
+Module 08 sitting 2 (Steps 6–12, DC01) was next; it ran 2026-10-23.
 
 ### Previous START HERE (set 2026-10-01, after Module 06 closed) — superseded
 
@@ -627,12 +658,13 @@ adding a second DC or forest** — that was considered and declined on 2026-10-0
 ---
 
 1. ✅ **Module 08 sitting 1 — done 2026-10-12** (Steps 0–5, read-only). See the module's run log.
-2. 🚩 **NEXT SESSION — Module 08 sitting 2** opens `Directory Service Changes` and tests whether Modules 02 and
-   03's gate pattern holds in a third store. Nothing optional stands anywhere between here and
-   Module 09 — every "could also test" item across Modules 03, 06 and 07 is **closed as won't-do**
-   and listed under section C above and in each module's own run log. **Do not re-propose them.**
-3. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
+2. ✅ **Module 08 sitting 2 — done 2026-10-23** (Steps 6–9, 11). The gate pattern held in a third
+   store; three findings written. Every "could also test" item across Modules 03, 06, 07 **and now
+   08** is **closed as won't-do** and listed in each module's own run log. **Do not re-propose them.**
+3. 🚩 **NEXT — Module 09 sitting 1** (Steps 0–4, DC01). Module 08 closed 2026-11-03 and Module 09's
+   run sheet is written.
+4. **Consider rebuilding WS01** if the `gpupdate`/`gpedit` blockers keep costing time. The cost
    has risen again: Module 02's audit config, Module 03's `Registry` subcategory + Run-key SACL,
    and now the **completed** Sysmon install and config would all need redoing.
-4. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
-5. Keep the **Progress log** in `README.md` and the status tables here updated as modules complete.
+5. **Module 12 (Kerberos capstone)** remains the standout portfolio artifact.
+6. Keep the **Progress log** in `README.md` and the status tables here updated as modules complete.

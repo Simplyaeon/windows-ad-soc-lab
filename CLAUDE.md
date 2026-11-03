@@ -21,7 +21,9 @@ internet by design. Snapshots: `00-clean-install` (pre-domain), `01-domain-ready
 on the Windows install default of Pacific until then, so any timestamp recorded before
 that date and *displayed* rather than read from XML is eight hours out.
 
-**Both eval licences are rearmed and healthy.** DC01's Windows Server evaluation had
+**Eval licences: DC01 was rearmed on 2026-09-04, but on 2026-11-03 its desktop watermark read
+"Windows License is expired"** (seen in a Module 08 screenshot; not investigated, per the user's
+standing request not to chase it). Earlier history: DC01's Windows Server evaluation had
 expired and was shutting the VM down hourly (`1074`, "license period ... has expired");
 `slmgr /rearm` + reboot fixed it, and `slmgr /dlv` shows the remaining rearm count. Two
 things still follow from it: **the licence state lives in the snapshots**, so restoring
@@ -35,19 +37,69 @@ rather than trying to inspect anything directly.
 
 ## Where things stand
 
-### 🚩 START HERE — the next sitting (set 2026-10-12, after Module 08 sitting 1)
+### 🚩 START HERE — the next sitting (set 2026-11-03, after Module 08 closed)
 
-**Next: Module 08 sitting 2 — Steps 6–12, DC01 only.** Sitting 1 (Steps 0–5, read-only) ran
-2026-10-12 and is written up in the run log near the top of `labs/08-domains-forests-dcs.md`; every
-prediction held, and Step 10's inventory and FSMO tables are already filled from its output.
-**Sitting 2 is the first to change DC01** — capture Step 6.1's `DS Access` readback *before* Step 7.
-Small carry-overs: `maxSize` of DC01's Security log, and
-sitting 1's screenshots (on the Windows machine, not yet read or filed).
+**Module 08 is ✅ COMPLETE** (closed 2026-11-03). **Next: Module 09 sitting 1** —
+`labs/09-ous-and-delegation.md`, Steps 0–4, **DC01 only**, run sheet written 2026-11-03 and not yet
+run. It tests whether delegating control of an OU is logged at all: the identical delegation on
+`Corp/Users/Finance` (under a SACL auditing `Modify permissions`) and on `Lab09Control` (no SACL).
+**Ordering is load-bearing:** `Corp`'s SACL before anything is built under it; `Lab09Control` never
+gets one; every boundary written down in UTC, because sitting 2's queries depend on sitting 1's times.
 
-**Measured 2026-10-12: DC01's Security log has NEVER wrapped** — `oldestRecordNumber` 1, oldest
-event a 4688 on 2026-07-28 (not a 1102, so never cleared), ~76 days held. WS01 holds ~1 day. **No
-cause established for the difference.** **The README's Module 00 dates were wrong:** the domain
-object's `whenCreated` is 2026-08-02, not 08-09 — annotated in the README, not re-dated.
+**Close-out facts from 2026-11-03:**
+
+- **The four sitting-1 screenshots had never been taken** — every note said "file them". Recaptured
+  2026-11-03 from the same read-only commands; every value matched the 2026-10-12 run log. **A
+  checklist item saying "file X" is not evidence X exists.** One capture saved as an all-black 9.5 KB
+  file — check the file size, not just the filename.
+- **Step 10.3's second answer was written by Claude at the user's explicit request** and is labelled
+  so in the module. The first is the user's own.
+
+**Previous block (set 2026-10-23, after Module 08 sitting 2) — superseded:**
+
+Sitting 2 (Steps 6–9, 11) ran 2026-10-23; its run log and three findings are in
+`labs/08-domains-forests-dcs.md`.
+
+**What sitting 2 established** (details in the module, not repeated here):
+
+- **The object gate held in a third store.** The only 5137 on DC01 is `lab_dirtest` (inside the
+  SACL'd OU); **none for `LabAudit`** (created before its SACL). **The subcategory gate on its own
+  was never exercised** — nothing was created while `Directory Service Changes` was off.
+- **The unaudited OU still left a trace:** a 5136 pair at 09:42:37 UTC on the **domain root's**
+  `nTSecurityDescriptor`, diffed on the box to one added entry, **`(D;;DC;;;WD)` = Everyone
+  AccessDenied DeleteChild**. Most likely accidental-deletion protection (`True` on the OU) — **not
+  established**; 7.2 was not timed and the mechanism is recall.
+- **One user creation = 1 × 5137 + 3 × 5136** under one `OpCorrelationID`. **Deletes wrote no 5141,
+  twice**; the SACL audited no delete right — hypothesis, **untested**.
+
+**New DC01 lab state — record it, don't rediscover it:**
+
+- **Domain root DACL carries `(D;;DC;;;WD)`** since 2026-10-23 09:42:37 UTC. It **survived** clearing
+  the OU's protection and deleting the OU. **Left in place deliberately.**
+- `Directory Service Changes` = **Success**, left on for Modules 09–10. `Directory Service Access`
+  untouched (Success).
+- `C:\evidence\08-dc01-security.evtx` on DC01 (created this sitting; covers 2026-07-28 → 2026-10-23).
+
+**Closed as won't-do 2026-10-23 — do not re-propose as work:** ✖ the 5141 test (add `Delete all
+child objects`, create/delete, recount); ✖ the second-`description`-change test for Finding 2. Both
+stand in the module's Open questions table as declared limitations.
+
+**Traps from the sitting:** an undefined PowerShell variable is silently `$null`, so a typo errors on
+the indexing (`Cannot index into a null array`), not the name; `-Confirm:$false` suppresses the
+prompt and the action **runs**; variables die with the window — write boundaries down in UTC and
+re-check a hand-set one against a known count; two empty values compare equal, so check `.Length`
+before `-eq`; and **relayed text drifts** — the user relayed `lab_dirtest` / `module 08 test`, the
+log printed `Lab_dirtest` / `Module 08 test`. Quote the log.
+
+**Screenshots:** frames taken from the host show the host taskbar/desktop. **Crop to the VM window
+before committing** (`sips -c H W --cropOffset Y X`; Pillow is not installed) and **read the result
+back** — the first crop on 2026-10-23 clipped the first letter of every line.
+
+### Previous START HERE (set 2026-10-12, after Module 08 sitting 1) — superseded
+
+Sitting 1 (Steps 0–5, read-only) ran 2026-10-12. **Measured: DC01's Security log has NEVER wrapped**
+(`oldestRecordNumber` 1, oldest event 2026-07-28) against WS01's ~1 day; no cause established.
+**The README's Module 00 dates were wrong** — `whenCreated` is 2026-08-02; annotated, not re-dated.
 
 ### Previous START HERE (set 2026-10-01, after Module 06 closed)
 
@@ -62,8 +114,8 @@ work anywhere in Part I.**
 | | On | What |
 |---|---|---|
 | ~~A~~ | DC01 | ✅ **Module 08 sitting 1 — done 2026-10-12** |
-| **B** | DC01 | **Module 08 sitting 2** — Steps 6–12, the audit gates and the detection half |
-| **C** | desk | Commit and push. Verify with `git log origin/main..main` rather than trusting any line about push state |
+| ~~B~~ | DC01 | ✅ **Module 08 sitting 2 — done 2026-10-23** |
+| ~~C~~ | desk | ✅ **Closed 2026-11-03.** Verify push state with `git log origin/main..main` rather than trusting any line here |
 
 **What Module 08 tests:** whether Modules 02 and 03's gate pattern — a subcategory switch *plus*
 the object's SACL, either one silently swallowing the event — holds in **Active Directory**, a

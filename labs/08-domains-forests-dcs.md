@@ -3,9 +3,11 @@
 > **Runs on:** DC01 only. WS01 is not needed and should stay powered off
 > **Time:** ~2 hours, split across two sittings
 > **Roll back to:** `mod04-start` · **Snapshot before starting:** `mod08-start` (DC01)
-> **Status:** written 2026-10-01. **Sitting 1 complete 2026-10-12 (Steps 0–5) — see the run log
-> below.** Sitting 2 (Steps 6–12) not yet run. Everything marked **prediction** is an expectation
-> to be tested, not a fact. Correct this file from the run.
+> **Status:** ✅ **complete 2026-11-03.** Written 2026-10-01; sitting 1 ran 2026-10-12 (Steps 0–5),
+> sitting 2 ran 2026-10-23 (Steps 6–9, 11), and the four sitting-1 screenshots were recaptured on
+> 2026-11-03, when they were found never to have been taken. Both run logs and three findings are
+> below. Everything marked **prediction** in the steps is the expectation as written *before* the
+> run; where the run disagreed, a **Run result** note says so.
 
 ---
 
@@ -61,7 +63,7 @@ error anywhere**:
 |---|---|---|---|
 | 02 | NTFS files | `File System` | the SACL's audited rights (`WRITE_DAC`) |
 | 03 | The registry | `Registry` | the SACL's audited rights (`Set Value`) |
-| 08 | **Active Directory** | **`Directory Service Changes`** | **the SACL on the AD object** |
+| 08 | **Active Directory** | **`Directory Service Changes`** | the SACL's audited rights (`CreateChild`, `WriteProperty` — and, untested, `Delete`) |
 
 **The hypothesis is that the pattern holds a third time, in a completely different store.**
 
@@ -121,6 +123,136 @@ The two that matter most to a SOC analyst:
   machine that would be at fault.
 - **RID Master** — hands out the pools of numbers used to build new account SIDs. Without it you
   eventually cannot create accounts.
+
+---
+
+# Run log — Sitting 2 (2026-10-23, Steps 6–9 and 11 complete, DC01)
+
+Only what was pasted back or shown in a screenshot is recorded as verified. Three predictions
+held, one failed, and one change happened that the run sheet never planned. The findings are
+written further down this file.
+
+## Steps 6–8 — gates read, gates opened, three changes made
+
+| Step | Read | Result |
+|---|---|---|
+| 6.1 | `auditpol /get /category:"DS Access"` | **prediction held.** `Directory Service Changes` **No Auditing**, `Directory Service Replication` No Auditing, `Detailed Directory Service Replication` No Auditing, `Directory Service Access` **Success**. `hostname` → `DC01` in frame. `08-ds-access-gates.png` (taskbar 10:35 AM local, UTC+1) |
+| 6.3 | boundary, `(Get-Date).ToUniversalTime()` | **09:38:38 UTC** 2026-10-23. Everything before this is the control |
+| 7.1 | `auditpol /set … "Directory Service Changes" /success:enable`, then `/get` | readback **Success**. **First change made to DC01 in this module** |
+| 7.2 | `New-ADOrganizationalUnit LabAudit`, then `Get-ADOrganizationalUnit` | `DistinguishedName : OU=LabAudit,DC=corp,DC=local`. Created with the subcategory **on** and **no SACL yet** — the 9.4 control. **Not individually timed** |
+| 7.3 | SACL via `dsa.msc` (Everyone, Success, this object and all descendants, Write all properties + Create all child objects) | reported done by the user; no screenshot (optional, declined). Verified in 7.4 |
+| 7.4 | `(Get-Acl 'AD:/OU=LabAudit,…' -Audit).Audit` | **verified.** Entry 1: **`CreateChild, WriteProperty`**, `ObjectType` all-zero (all properties), `InheritanceType All`, `Success`, `Everyone`, **`IsInherited False`** — the 7.3 rule, both rights printed by name. Entries 2 and 3 **were not added by us**: `WriteProperty` on `ObjectType` `f30e3bbe-…` / `f30e3bbf-…`, `InheritedObjectType bf967aa5-…`, **`IsInherited True`**. What those GUIDs name is **not resolved on the box**. `08-sacl-readback.png` |
+| 7.4b | `(Get-Acl 'AD:/DC=corp,DC=local' -Audit).Audit`, then `@(…).Count` | **5 entries, complete** — the count closed a frame whose bottom showed no prompt. (1) `WriteProperty, WriteDacl, WriteOwner`, Everyone, `InheritanceType None`; (2) `ExtendedRight`, BUILTIN\Administrators, `None`; (3) `ExtendedRight`, CORP\Domain Users, `None`; (4)/(5) `WriteProperty` on `f30e3bbf-…`/`f30e3bbe-…`, Everyone, `All`, **`IsInherited False`** — the source of `LabAudit`'s inherited entries. **No entry carries `CreateChild`.** `08-domain-sacl.png` |
+| 8.0 | `(Get-Date).ToUniversalTime()` + `$start = Get-Date` | **09:58:10 UTC** |
+| 8.1 | `Set-ADOrganizationalUnit … -Description 'module 08 test'`, readback with `-Properties Description` | `Description : module 08 test` (as relayed — the log prints `Module 08 test`; see 9.2) |
+| 8.2 | `New-ADUser lab_dirtest -Path 'OU=LabAudit,…' -Enabled $false`, readback | `CN=lab_dirtest,OU=LabAudit,DC=corp,DC=local`, `Enabled : False` (as relayed — the log prints `Lab_dirtest`) |
+| 8.3 | `Remove-ADUser … -Confirm:$false`, readback | `Cannot find an object with identity …` — the error is the confirmation |
+| 8.end | `(Get-Date).ToUniversalTime()` | **10:10 UTC** (no seconds relayed). Step 8 window: 09:58:10 → 10:10 UTC |
+
+**Why 7.4b was run.** It is **not established** whether a creation is audited against the new
+object's SACL or its parent's. If the parent's, the control depended on the domain root's SACL,
+which had not been read. It turned out not to matter for the 5137: when `LabAudit` was created,
+neither it nor the domain audited `CreateChild`, so the control holds under both possibilities.
+
+## Step 9 — what the log kept
+
+| Step | Read | Result |
+|---|---|---|
+| 9.1 | `… Id=5136 \| Measure-Object` (no window) | **6** — for one deliberate modify |
+| 9.2 | `$d = … Id=5136; StartTime=$start`, `@($d).Count` | **4** inside the Step 8 window, so **2 predate 09:58:10 UTC** |
+| 9.2 `$d[0]` | `.Message` | **from 8.2.** `CORP\Administrator` `0x39279`; `CN=Lab_dirtest,OU=LabAudit,…`, Class `user`, GUID `{3b26da90-…}`; **`userAccountControl`** = **`514`**, `Value Added`; Correlation ID **`{4e555345-2e07-4428-998c-bf56feb2f96a}`**. `514` = normal + disabled is **recall**, consistent with `-Enabled $false` |
+| 9.2 `$d[1]` | `.Message` | **from 8.2.** Same object; **`sAMAccountName`** = `Lab_dirtest`, `Value Added`; **same Correlation ID** |
+| 9.2 `$d[2]` | `.Message` | **from 8.2.** Same object; **`objectClass`** = `1.2.840.113556.1.5.9` (raw OID — that it names `user` is **recall**), `Value Added`; **same Correlation ID** |
+| 9.2 `$d[3]` | `.Message` | **the 8.1 change — prediction held.** `OU=LabAudit,DC=corp,DC=local`, GUID **`{6525648f-…}`** = the `ObjectGUID` read in 7.4; **`description`** = `Module 08 test`; **`Value Added` only**; Correlation ID **`{83c69c3e-b1cc-4686-bda6-55ddbfcb3701}`** — a separate operation. `08-5136-change.png` |
+| 9.3 | `Measure-Object` on 5137, then 5141 (no window) | **5137 : 1. 5141 : 0 — the deletion prediction FAILED.** `lab_dirtest` is confirmed gone, so the delete happened and was not logged as a 5141 |
+| 9.4 | `$c = … Id=5137`, `$c[0].Message` | **the control held.** The only 5137 on DC01 is `CN=Lab_dirtest,OU=LabAudit,…`, GUID `{3b26da90-…}`, `0x39279` — **no 5137 exists for `LabAudit`**. **Same Correlation ID `{4e555345-…}` as the three 8.2 5136s.** The 5137 carries **no attribute fields**. `08-sacl-control.png` |
+
+`Get-WinEvent` returns newest first, so 8.1 — the first change made — was `$d[3]`, as predicted
+before it was read.
+
+**Two offered tests were declined by the user on 2026-10-23**, both recorded so the findings state
+the limitation rather than imply a result:
+
+- **A second change to the now-populated `description`**, which would have shown what a 5136 does
+  when a plain string value is *replaced*.
+- **Adding `Delete all child objects` to the SACL, then creating and deleting a second user**, which
+  would have tested whether the missing 5141 is the SACL's rights mask.
+
+**Fact relevant to the 5141 miss, verified in 7.4:** the `LabAudit` SACL's rights are
+`CreateChild, WriteProperty` only — **no `Delete`, `DeleteChild` or `DeleteTree`** — and the
+domain's SACL (7.4b) carries none either.
+
+**⏸ Paused after 9.4; resumed the same day.** The PowerShell window was lost in the break, so
+`$start` was re-set by hand — `Get-Date '2026-10-23 10:58:10'`, 09:58:10 UTC in DC01's UTC+1 — and
+read back as `Friday, October 23, 2026 10:58:10 AM`.
+
+## Step 9 (continued) — the two 5136s nobody planned
+
+| Step | Read | Result |
+|---|---|---|
+| 9.2b | `$p = … Id=5136; EndTime=$start`, `@($p).Count` | **2** — matches 6 − 4, confirming the hand-set `$start` |
+| `$p` times | `$p \| Select-Object TimeCreated` | **both 10:42:37 AM local = 09:42:37 UTC** — four minutes after the boundary, early in Step 7 |
+| `$p[0]` | `.Message` | `CORP\Administrator` **`0x39279`** (today's session); **`DC=corp,DC=local`**, Class `domainDNS`, GUID `{df2288c6-…}`; **`nTSecurityDescriptor`**, `Value Added`; Correlation ID **`{8767bcc8-56e8-4850-9e00-9e094b4aa04a}`**. The value's `S:` section matches the five SACL entries read in 7.4b |
+| `$p[1]` | `.Message`, relayed | same object, attribute and Correlation ID, **`Value Deleted`**. **One replacement**: old value out, new value in, same second, one ID |
+| field names | `([xml]$p[0].ToXml()).Event.EventData.Data \| Format-Table Name` | 15 fields; value in **`AttributeValue`**, operation in **`OperationType`**, object in **`ObjectDN`** — two names that had been recall |
+| lengths | each `AttributeValue` into `$a`/`$b`, `.Length` | **new 3540, old 3528** — the descriptor **genuinely changed**; not a save with nothing changed |
+| diff | `Compare-Object ($b -split '\(') ($a -split '\(')` | **one piece, `D;;DC;;;WD)`, `=>`** (new only); nothing removed. `(D;;DC;;;WD)` is **12 characters — the length difference exactly** |
+| decode | `ConvertFrom-SddlString -Sddl 'D:(D;;DC;;;WD)' -Type ActiveDirectoryRights` | **`Everyone: AccessDenied (DeleteChild)`** — resolved on the box |
+| protection | `Get-ADOrganizationalUnit LabAudit -Properties ProtectedFromAccidentalDeletion` | **`True`** |
+
+**What the evidence supports, and what it does not.** At 09:42:37 UTC, in the session running this
+module, the domain root's DACL gained `Everyone: AccessDenied (DeleteChild)`, and the domain's own
+SACL entry 1 (`WriteProperty, WriteDacl, WriteOwner`, Everyone) is what made the change auditable.
+**The leading candidate cause is Step 7.2**: `New-ADOrganizationalUnit` created `LabAudit` with
+accidental-deletion protection on, and that protection is recalled as adding exactly this entry to
+the **parent**. Timing, content and the `True` flag all fit, and no competing candidate is known —
+but 7.2 was not timed and the mechanism is recall, so it is **not established**.
+
+## Step 9.5 — the export
+
+| Step | Read | Result |
+|---|---|---|
+| 9.5 | `New-Item C:/evidence` (absent on DC01), `Set-Location`, `wevtutil epl Security 08-dc01-security.evtx` | prints nothing. **Coverage: oldest 7/28/2026, newest 2026-10-23 8:51 PM local** — all of DC01's history, including the whole of today |
+
+## Step 11 — cleanup, and the deny entry that stayed
+
+| Step | Read | Result |
+|---|---|---|
+| 11.1a | `Remove-ADOrganizationalUnit LabAudit -Confirm:$false` | **`Access is denied` — prediction held**, for the domain Administrator |
+| 11.1b | `$clear = Get-Date` (about 8 PM UTC; exact value not relayed), `-ProtectedFromAccidentalDeletion $false`, readback | **`False`** (verified). **5136 since `$clear`: none** |
+| 11.1c | `(Get-Acl 'AD:/DC=corp,DC=local').Sddl -like '*(D;;DC;;;WD)*'` | **`True`** — clearing `LabAudit`'s protection did **not** remove the entry from the parent |
+| 11.1d | `Remove-ADOrganizationalUnit LabAudit`, readback `-Filter "Name -eq 'LabAudit'"` | readback **empty** — removed (the same query returned it in 7.2) |
+| 11.1e | 5141 count; the domain-root `-like` check again | **5141 : 0** — the OU's deletion was silent too, with no delete right audited on it or the domain. **Deny entry: `True`** — **it outlives the OU that most likely caused it** |
+| 11.2 | `auditpol /get /subcategory:"Directory Service Changes"` | **Success** — left on **by decision**. It also agrees with 7.1 at the end of the day, which is weak evidence against the GPO-overwrite hypothesis in the gotchas (no forced policy refresh was run) |
+
+## Lab state at the end of sitting 2 — from readbacks, not memory
+
+| Item | State | Read |
+|---|---|---|
+| `Directory Service Changes` | **Success** — left on deliberately | 11.2 |
+| `Directory Service Access` | **Success** — unchanged since 6.1 | 6.1 |
+| `Directory Service Replication`, `Detailed Directory Service Replication` | No Auditing — unchanged | 6.1 |
+| `LabAudit` OU and its SACL | **removed**, confirmed absent | 11.1d |
+| `lab_dirtest` | **deleted**, confirmed absent | 8.3 |
+| **Domain root DACL** | **carries `(D;;DC;;;WD)` — Everyone denied DeleteChild — added 09:42:37 UTC 2026-10-23, most likely by 7.2's protected OU. Left in place and documented**; no removal requested | 11.1e |
+| `C:\evidence\08-dc01-security.evtx` | on DC01; covers 2026-07-28 → 2026-10-23 8:51 PM local. Not in the repo | 9.5 |
+| DC01 Security log | never wrapped (sitting 1) | 5.3 |
+
+## Traps this sitting added
+
+- **An undefined variable is silently `$null`.** `$sd[0]` (a typo for `$d[0]`) returned `Cannot
+  index into a null array` — the error names the indexing, not the misspelling.
+- **`-Confirm:$false` means "don't ask", not "don't do".** It suppresses the prompt and the action
+  runs — `rm -f`, not a dry run. The readback settled it.
+- **Variables die with the window.** Losing the PowerShell window lost `$start`; re-setting it by
+  hand from the written-down UTC time, then checking it against a known count (2 = 6 − 4), made the
+  re-set verifiable rather than hoped.
+- **A readback can look complete and not be.** The 7.4b frame ended without a prompt; `@(…).Count`
+  confirmed five entries before "no `CreateChild`" was concluded.
+- **Before comparing two values for equality, prove neither is empty.** Two empty variables compare
+  equal. `.Length` first — and here the lengths alone answered the question.
+- **Relayed text drifts from logged text.** `module 08 test` and `lab_dirtest` were relayed
+  lowercase; the log printed `Module 08 test` and `Lab_dirtest`. Findings quote the log.
 
 ---
 
@@ -624,7 +756,13 @@ Get-ADOrganizationalUnit -Filter "Name -eq 'LabAudit'"
 ```
 
 > **This creation happens *before* the SACL exists**, deliberately. It is the control: Step 9
-> should find no event for it.
+> should find no **5137** for it.
+
+> **Run result (2026-10-23): no 5137 — but not no event.** Creating `LabAudit` also wrote a 5136
+> pair on the **domain root**: its DACL gained `Everyone: AccessDenied (DeleteChild)`, most likely
+> because new OUs are protected from accidental deletion, and the domain's own SACL audits changes
+> to its permissions. **Time this command** (`(Get-Date).ToUniversalTime()` before and after) if
+> you rerun the module — the 2026-10-23 run could only place it "early in Step 7". See Finding 1.
 
 ### 7.3 Open the object gate — the GUI is better here
 
@@ -677,6 +815,17 @@ Mark the time first:
 (Get-Date).ToUniversalTime()
 ```
 
+Then keep the same moment in a variable, so Step 9 can search from it:
+
+```powershell
+$start = Get-Date
+```
+
+**The first line is for your notes (UTC, the way findings are written); the second is for the
+query.** `StartTime` expects local time, which is what plain `Get-Date` gives. A variable lives only
+as long as this PowerShell window — **do Steps 8 and 9 in the same window**. If it gets closed, set
+`$start` again by hand from the time you wrote down.
+
 ### 8.1 Modify an attribute
 
 ```powershell
@@ -704,6 +853,12 @@ because a deleted *value* was Event 12 rather than 13. The equivalent question h
 deletion gets its own ID — **prediction:** 5141, a different ID from the 5136 of 8.1. Step 9 tests
 it.
 
+> **Run result (2026-10-23): no 5141 was written** — not for this delete, and not for `LabAudit`'s
+> own deletion in Step 11. The SACL set in 7.3 audits `CreateChild, WriteProperty` and **no delete
+> right**. That this is the cause is the leading hypothesis and **was not tested**. **If you rerun
+> this module, tick `Delete` and `Delete all child objects` as well in 7.3** — and record whether
+> a 5141 then appears, which would settle it.
+
 Mark the closing time:
 
 ```powershell
@@ -730,27 +885,52 @@ Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5136} | Measure-Object
 
 ### 9.2 Read one properly
 
+**Aim: read the 5136 that Step 8.1 caused, and be sure it is that one.**
+
+Take only the 5136s from Step 8's window:
+
 ```powershell
-$d = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5136} -MaxEvents 1
+$d = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5136; StartTime=$start}
 ```
 
 ```powershell
-$d.Message
+@($d).Count
+```
+
+> **Do not reach for `-MaxEvents 1` here.** "The newest matching event is not the right event" has
+> bitten this lab twice — Module 07's `-First 1` returned a nine-second transient logon, and Module
+> 06's `-MaxEvents 1` returned an LDAP drop fourteen minutes past the knock. Filter by time first,
+> then choose by content.
+
+**How many to expect is not established.** Creating `lab_dirtest` in 8.2 may write 5136s of its
+own as the new object's attributes are filled in. Read what comes back rather than assuming one.
+
+Look at the first one:
+
+```powershell
+$d[0].Message
 ```
 
 `.Message` renders every field with its label, which is what Event Viewer's General tab shows and
-is easier than XML for a first look.
+is easier than XML for a first look. **You want the one whose `LDAP Display Name` is
+`description`** and whose object is `OU=LabAudit,DC=corp,DC=local`. If `$d[0]` is not it, try
+`$d[1]`, `$d[2]` and so on. When you find it, give it its own name — with the number you found in
+place of `0`:
+
+```powershell
+$one = $d[0]
+```
 
 Then pull the fields by name:
 
 ```powershell
-([xml]$d.ToXml()).Event.EventData.Data | Format-Table Name, '#text'
+([xml]$one.ToXml()).Event.EventData.Data | Format-Table Name, '#text'
 ```
 
-> **`[xml]` accepts exactly one root element.** `$arr.ToXml()` without an index concatenates every
+> **`[xml]` accepts exactly one root element.** `$d.ToXml()` without an index concatenates every
 > event's XML and fails with *"this document already has a DocumentElement node"* — which reads
-> like a parser fault rather than a missing subscript. Assign one event to its own variable first,
-> as above.
+> like a parser fault rather than a missing subscript. That is why the chosen event gets its own
+> variable first.
 
 **Prediction:** fields naming the object's distinguished name, the attribute that changed, the old
 and new values, and the account that did it.
@@ -769,20 +949,59 @@ Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5141} | Measure-Object
 
 ### 9.4 The control — the change that should NOT be there
 
-The `LabAudit` OU was created in Step 7.2, **before** the SACL existed. Look for it:
+**Aim: show, in one output, a creation the log kept and a creation it did not.**
+
+The `LabAudit` OU was created in Step 7.2, **before** the SACL existed. `lab_dirtest` was created in
+8.2, **after**. Both are creations, so both would be 5137s — if both were logged.
+
+> **Why not just search the message for `LabAudit`?** Because `lab_dirtest` lives *inside*
+> `LabAudit`, so its 5137 contains that word too — `CN=lab_dirtest,OU=LabAudit,DC=corp,DC=local`.
+> A whole-message search would return it and make the control look failed when it has not. This is
+> the trap Module 03 hit, where hunting `'*Notepad.exe*'` returned a `reg.exe` process. **Extract
+> the field first, then filter on it.**
+
+Get every 5137:
 
 ```powershell
-Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5137} | Where-Object { $_.Message -like '*LabAudit*' }
+$c = Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5137}
 ```
 
-**Prediction: nothing, while 9.3 returned a count above zero.** That combination is the finding —
-the same argument structure as Module 03's Finding 2, where the query that missed two writes
-*returned* the third, so wrong-host, narrow-window, rotation and channel-off were all excluded by
-the query's own positive result.
+Look at the field names in the first one:
 
-> **If 9.3 found nothing either, you have not got a result — you have got an unproven instrument.**
+```powershell
+([xml]$c[0].ToXml()).Event.EventData.Data | Format-Table Name, '#text'
+```
+
+**A field named `ObjectDN` holds the object's full distinguished name** — confirmed on DC01
+2026-10-23 from a 5136's field list (`OpCorrelationID`, `AppCorrelationID`, `SubjectUserSid`,
+`SubjectUserName`, `SubjectDomainName`, `SubjectLogonId`, `DSName`, `DSType`, `ObjectDN`,
+`ObjectGUID`, `ObjectClass`, `AttributeLDAPDisplayName`, `AttributeSyntaxOID`, `AttributeValue`,
+`OperationType`). That the 5137 uses the same name is expected but read it off the box.
+
+Now print just that field for every 5137. `foreach` runs the part in `{ }` once per event, with
+`$e` standing for the current one — the one new construct in this step:
+
+```powershell
+foreach ($e in $c) { (([xml]$e.ToXml()).Event.EventData.Data | Where-Object Name -eq 'ObjectDN').'#text' }
+```
+
+**Prediction:** `CN=lab_dirtest,OU=LabAudit,DC=corp,DC=local` appears, and
+`OU=LabAudit,DC=corp,DC=local` **on its own does not**. That combination is the finding — the same
+argument structure as Module 03's Finding 2, where the query that missed two writes *returned* the
+third, so wrong-host, narrow-window, rotation and channel-off were all excluded by the query's own
+positive result. Here the positive and the absence sit in the same list.
+
+> **If the list is empty — no `lab_dirtest` either — you have not got a result, you have got an
+> unproven instrument.**
 > Go back to 7.1 and 7.4 and establish which gate is still shut. Do not write a finding until one
 > of these queries returns something.
+
+> **Run result (2026-10-23): the prediction held, more simply than written.** DC01 held exactly
+> **one** 5137 — `CN=Lab_dirtest,OU=LabAudit,DC=corp,DC=local` — so `$c[0].Message` answered it
+> without the `foreach`. The `foreach` stays here because a domain with any other audited creation
+> would return more than one. **Then read the 5136s from before Step 8** (`EndTime=$start`): on the
+> 2026-10-23 run, the "nothing" for `LabAudit` turned out to be "no 5137, plus a 5136 pair on its
+> parent". See the run log and Finding 1.
 
 ### 9.5 Freeze the evidence before photographing anything
 
@@ -826,8 +1045,6 @@ forest. Write it into this file, from **command output** rather than recollectio
 
 ### 10.1 The inventory table
 
-| | Value | Read from |
-|---|---|---|
 *Filled 2026-10-12 from sitting 1's command output.*
 
 | | Value | Read from |
@@ -869,6 +1086,21 @@ Not a summary of the commands — the thing the inventory means:
 > This lab has one DC holding all five FSMO roles. Name one specific thing that breaks if it is
 > offline, and say which log you would check first.
 
+**Answers, filed 2026-11-03:**
+
+1. *(The analyst's words.)* The attacker doesn't need to crack anything because the hash can work
+   without the attacker needing to know the password.
+2. *(Written by Claude at the analyst's request, 2026-11-03 — not the analyst's own wording.)* With
+   DC01 offline, WS01 can no longer resolve domain accounts: on 2026-09-30, with DC01 powered off,
+   `Get-LocalGroupMember -Group 'Remote Desktop Users'` on WS01 failed with **error 1789** because
+   it could not resolve `asmith`'s SID, and the identical command succeeded once DC01 was booted.
+   I would check **WS01's System log first**, for Netlogon errors saying it could not reach a domain
+   controller. **That this appears as Netlogon event 5719 is recall, not seen in this lab.**
+
+The second answer names a single-DC failure rather than a single-*role* failure. In this lab the two
+are the same: DC01 holds every role, so any role-specific symptom (the PDC Emulator's clock, lockout
+processing, the RID Master's SID pool) arrives together with everything else.
+
 ---
 
 # Step 11 — Lab state and cleanup (DC01)
@@ -894,6 +1126,12 @@ Then retry the removal, and **read it back**:
 ```powershell
 Get-ADOrganizationalUnit -Filter "Name -eq 'LabAudit'"
 ```
+
+> **Run result (2026-10-23): held** — `Access is denied`, even for the domain Administrator, until
+> the flag was cleared. **Then check the parent:**
+> `(Get-Acl -Path 'AD:/DC=corp,DC=local').Sddl -like '*(D;;DC;;;WD)*'`. On this run it read
+> **`True`** both after clearing the protection and after deleting the OU — the deny entry that
+> creating the OU added to the domain root **stayed behind**, and no 5136 recorded any change to it.
 
 An empty result is the correct answer here, and you now know from Step 4 how to tell this empty
 result from a broken query.
@@ -929,57 +1167,190 @@ Write into the run log, from readbacks and not from memory:
 
 Save into `../assets/`. **Put `hostname` at the top of every frame.**
 
-- [ ] `08-forest-domain.png` — `Get-ADForest` and `Get-ADDomain` output together: the shape of
-      the directory in one image
-- [ ] `08-fsmo-roles.png` — `netdom query fsmo`, all five roles on one host
-- [ ] `08-ntds-sysvol.png` — the NTDS parameters and `Get-SmbShare` side by side: the two things
-      on disk that are the domain
-- [ ] `08-no-trusts.png` — `Get-ADTrust -Filter *` returning nothing, **with `Get-ADForest`'s
+- [x] `08-forest-domain.png` — `Get-ADForest` and `Get-ADDomain` output together: the shape of
+      the directory in one image. **Recaptured 2026-11-03** (never taken in sitting 1); `hostname` →
+      `DC01` in frame, every value matches the sitting-1 run log
+- [x] `08-fsmo-roles.png` — `netdom query fsmo`, all five roles on one host. **Recaptured
+      2026-11-03**; `hostname` → `DC01`, five roles on `DC01.corp.local`
+- [x] `08-ntds-sysvol.png` — the NTDS parameters and `Get-SmbShare` side by side: the two things
+      on disk that are the domain. **Recaptured 2026-11-03**; `hostname` → `DC01`,
+      `C:\Windows\NTDS\ntds.dit` and the same five shares as sitting 1
+- [x] `08-no-trusts.png` — `Get-ADTrust -Filter *` returning nothing, **with `Get-ADForest`'s
       populated `Domains` in the same frame as the control.** The empty result is only evidence
-      beside the thing that proves the query works
-- [ ] `08-ds-access-gates.png` — `auditpol /get /category:"DS Access"` **before** the change. This
-      is the one that cannot be retaken later
-- [ ] `08-5136-change.png` — the 5136 field table from 9.2, showing the attribute and its old and
-      new values
-- [ ] `08-sacl-control.png` — 9.3's non-zero count beside 9.4's empty `LabAudit` result. **The pair
-      is the module's central evidence**, in the same way `06-5152-stealth.png` was Module 06's
+      beside the thing that proves the query works. **Recaptured 2026-11-03** (first attempt
+      saved as an all-black file); cropped to the PowerShell window. `hostname` → `DC01`,
+      `Domains {corp.local}`, then no output from `Get-ADTrust`
+- [x] `08-ds-access-gates.png` — `auditpol /get /category:"DS Access"` **before** the change, with
+      `hostname` → `DC01` in frame. Filed 2026-10-23
+- [x] `08-5136-change.png` — the 8.1 `description` 5136 (`$d[3].Message`). **Shows a new value
+      only** — the field was empty before, so there was no old value to show. Filed and cropped
+      2026-10-23
+- [x] `08-sacl-control.png` — the only 5137 on DC01, for `Lab_dirtest`. Filed and cropped
+      2026-10-23. **The count of 1 is not in the frame** — it rests on the 9.3 readback
+
+**Filed beyond the checklist, 2026-10-23:** `08-sacl-readback.png` (the `LabAudit` SACL, both
+rights by name, plus the two inherited entries) and `08-domain-sacl.png` (the domain root's five
+SACL entries — the evidence that no `CreateChild` was audited when `LabAudit` was created). **Not
+captured:** the domain-root 5136 pair and its `Compare-Object` result. They are in
+`C:\evidence\08-dc01-security.evtx` on DC01 and can be photographed from the export.
 
 ---
 
 # Findings
 
-> **Nothing here yet — this module has not been run.** Below are the questions the run is designed
-> to answer, each with the evidence that would settle it. **No finding gets written until a
-> controlled observation survives**, and a hypothesis must never inherit the grammar of a fact.
-> Findings use **observation → inference → recommendation**, kept strictly separate, with
-> timestamps in **UTC**.
+> Written 2026-10-23 from the two run logs above. **Observation → inference → recommendation**, kept
+> strictly separate; timestamps in **UTC**. All events: host **DC01**, log **Security**, subject
+> **`CORP\Administrator`**, Logon ID **`0x39279`**, date **2026-10-23** unless stated.
 
-### Candidate Finding 1 — Windows object auditing is gated the same way in a third store
+### Finding 1 — The object gate holds in Active Directory, and an unaudited object can still surface through its parent
 
-**Settled by:** Step 9.4 returning nothing for `LabAudit` while 9.3 returns a non-zero count.
+**Observation.**
 
-If the pattern holds across NTFS, the registry and Active Directory, the inference is that this is
-**architectural rather than per-store**, and the recommendation is a reusable pre-flight: *before
-generating activity against any audited object, read the subcategory and the object's SACL and
-confirm both.* If it does **not** hold — if AD logs changes without a SACL, or ignores one — that
-is the more interesting result and the comparison table in "What you're going to do" needs
-rewriting.
+- At **09:38:38 UTC** `Directory Service Changes` read **No Auditing**; Step 7.1 set it to
+  **Success**, readback-verified. `LabAudit` was then created **with no SACL of its own**, and the
+  domain root's five SACL entries (read and counted in 7.4b) included **no `CreateChild`**.
+- A SACL was then added to `LabAudit`: `CreateChild, WriteProperty`, Everyone, Success, this object
+  and all descendants (readback in 7.4).
+- `lab_dirtest`, created inside `LabAudit` after that, produced a **5137**
+  (`CN=Lab_dirtest,OU=LabAudit,DC=corp,DC=local`, GUID `{3b26da90-6499-4071-b815-693313fe90c9}`).
+  It is **the only 5137 on DC01**. **No 5137 exists for `LabAudit`.**
+- At **09:42:37 UTC**, early in Step 7, two **5136**s were written for **`DC=corp,DC=local`**,
+  attribute **`nTSecurityDescriptor`**: one `Value Deleted`, one `Value Added`, same second, Correlation ID
+  `{8767bcc8-56e8-4850-9e00-9e094b4aa04a}`. The two `AttributeValue`s are 3528 and 3540
+  characters long, and differ by exactly one DACL entry, **`(D;;DC;;;WD)`**. `ConvertFrom-SddlString`
+  resolves it to **`Everyone: AccessDenied (DeleteChild)`**.
+- `LabAudit` read **`ProtectedFromAccidentalDeletion : True`**. The entry was **still present** on
+  the domain root after the protection was cleared and after the OU was deleted, and **no 5136**
+  recorded either of those steps.
 
-### Candidate Finding 2 — A directory change is logged with before and after values
+**Inference.**
 
-**Settled by:** the 9.2 field table.
+- **I assess with high confidence that the SACL is a necessary gate for AD creation events**, as
+  it was for NTFS (Module 02) and the registry (Module 03). The same query that found no 5137 for
+  `LabAudit` returned one for `lab_dirtest`: same host, log and command, separated only by whether
+  `CreateChild` was audited. **That is now three stores with the same gate structure.** The
+  pattern looks architectural rather than a quirk of one store.
+- **What this run did not test is the subcategory gate on its own.** Nothing was created while
+  `Directory Service Changes` was off, so "the subcategory switch alone silences AD events" is
+  **expected from Modules 02–03, not observed here**.
+- **I cannot tell from this evidence whether a creation is audited against the new object's SACL
+  or its parent's.** Neither one audited `CreateChild` when `LabAudit` was created, so the control
+  holds either way and cannot tell the two apart.
+- **"An unaudited object leaves no trace" is false.** `LabAudit` produced no 5137, but creating it
+  changed its **parent's** permissions, and the domain's own default SACL (`WriteDacl`, Everyone)
+  recorded that change. **I assess with moderate-to-high confidence that Step 7.2 caused the 5136
+  pair**, through accidental-deletion protection: timing, content and the `True` flag all fit, and
+  no other candidate is known. **It is not established.** 7.2 was not individually timed, and how
+  the protection works is recall rather than something read on the box.
+- **The change was asymmetric: logged going on, never undone.** Clearing the protection and
+  deleting the OU left the deny entry on the domain root. So an ordinary admin action (making a
+  protected OU) leaves a lasting change on the most important object in the directory, and the
+  domain's audit trail records it as a permission change made by that admin.
+- MITRE: **T1136.002** (Create Account: Domain Account) for `lab_dirtest`. The ACL change is
+  benign here. Its relevance is that the same 5136 is the event an attacker's change to domain-root
+  permissions would write.
 
-The Security log usually says *what happened*, not *what the value used to be* — Module 03's 4657
-was unusual in carrying `OldValue`/`NewValue`. If 5136 does the same for AD attributes, say so
-precisely, and name what it still cannot tell you.
+**Recommendation.**
 
-### Candidate Finding 3 — Create, modify and delete are three different event IDs
+- **Pre-flight for any audited-object experiment: read the subcategory, the object's SACL *and*
+  its parent's SACL**, and count each readback with `@( ).Count` before treating it as complete.
+- **Hunt permission changes on the domain root:** 5136 where `ObjectDN = DC=corp,DC=local` and
+  `AttributeLDAPDisplayName = nTSecurityDescriptor`. Pair the events on `OpCorrelationID` and diff
+  the two `AttributeValue`s, as in the run log (`-split '\('` + `Compare-Object`, then
+  `ConvertFrom-SddlString`). **A `D;;…;;;WD` entry appearing on its own is the signature of an OU
+  being protected. Anything else on that object deserves a person's attention.**
+- **Record `(D;;DC;;;WD)` on the domain root as known lab state**, so a future module does not
+  rediscover it as an anomaly.
 
-**Settled by:** Steps 9.1 and 9.3.
+### Finding 2 — A 5136 carries values, and a replacement is two events joined by one ID
 
-This is Module 03's Event 12-vs-13 question in a new store: a hunt written for only one ID sees
-part of the activity and reports it as all of it. State the specific blind spot a 5136-only hunt
-would have.
+**Observation.**
+
+- Step 8.1 set `description` on an OU where it had been **empty**. **One** 5136, `Value Added`,
+  value `Module 08 test`, Correlation ID `{83c69c3e-b1cc-4686-bda6-55ddbfcb3701}`. **No
+  `Value Deleted`.**
+- The domain root's `nTSecurityDescriptor` change (Finding 1) was **two** 5136s, `Value Deleted`
+  (old, 3528 characters) and `Value Added` (new, 3540), same second, **same Correlation ID**.
+- The event's fields, read by name: `OpCorrelationID`, `AppCorrelationID`, `SubjectUserSid`,
+  `SubjectUserName`, `SubjectDomainName`, `SubjectLogonId`, `DSName`, `DSType`, `ObjectDN`,
+  `ObjectGUID`, `ObjectClass`, `AttributeLDAPDisplayName`, `AttributeSyntaxOID`, `AttributeValue`,
+  `OperationType`.
+- Values print **raw**: `objectClass` as the OID `1.2.840.113556.1.5.9`, `userAccountControl` as
+  `514`, permissions as SDDL.
+
+**Inference.**
+
+- **I assess with high confidence that a 5136 records the *after* value, and that replacing an
+  existing value also records the *before* value as a separate `Value Deleted` event**, joined to
+  the `Value Added` by `OpCorrelationID`. **This was observed on one attribute only,
+  `nTSecurityDescriptor`.** The planned test on a plain string attribute (changing `description` a
+  second time) **was declined**, so the behaviour for ordinary attributes is expected, not
+  observed.
+- **A first write has no "before".** A lone `Value Added` means the attribute was empty, or this is
+  the first write to it. It does not mean the event lost the old value.
+- This is unusually rich for the Security log. Module 03's 4657 was the only earlier event here
+  that carried old and new values. **What a 5136 cannot tell you is the meaning of a raw value**:
+  `514`, the OID and the SDDL all need decoding. `ConvertFrom-SddlString` decoded the SDDL on the
+  box. The meanings of `514` and the OID are recall, unresolved.
+
+**Recommendation.**
+
+- **Join 5136s on `OpCorrelationID`, never on timestamp.** Same-second events from different
+  operations are possible, and the ID is exact.
+- **Read `OperationType` before reading `AttributeValue`.** A `Value Deleted` value is the state
+  that was *removed*, so read alone it says the opposite of what happened.
+- Decode permission values with `ConvertFrom-SddlString`, never by eye.
+
+### Finding 3 — One event ID per operation, but the counts mislead and deletes went unrecorded
+
+**Observation.**
+
+- **Create.** `lab_dirtest` wrote **1 × 5137 plus 3 × 5136** (`objectClass`, `sAMAccountName`,
+  `userAccountControl`), all four sharing Correlation ID
+  `{4e555345-2e07-4428-998c-bf56feb2f96a}`. **The 5137 carries no attribute fields.**
+- **Modify.** One `description` change wrote **1 × 5136**.
+- **Delete.** `lab_dirtest` was deleted (readback `Cannot find an object`) and **no 5141** was
+  written. `LabAudit` was deleted (readback empty) and **no 5141** was written. **5141 total on
+  DC01: 0.**
+- Of the **six** 5136s on DC01 after the day's work, **one** was a deliberate modification. Three
+  came from one creation and two from a side-effect permission change.
+- Neither `LabAudit`'s SACL nor the domain's audited **any delete right**.
+
+**Inference.**
+
+- **Creation and modification have their own IDs, as predicted.** But **a 5136 is not a
+  "modification" in the everyday sense**: one user creation produced three of them. **A 5136 count
+  overstates deliberate changes.** Here it was six events for one intended change. This is the same
+  over-counting shape as Module 07, where one RDP connection wrote three 4624s.
+- **A 5137 alone tells you *that* an object was created, not *what* it was created with.** The
+  values are only in the 5136s that share its Correlation ID.
+- **Deletion was not recorded at all, twice.** The leading hypothesis is that the SACL's rights
+  decide whether a delete is audited, the same way the audited rights were Module 02's fourth gate.
+  **The discriminating test (add `Delete all child objects`, create and delete a second user,
+  recount) was offered and declined. I don't know what causes the missing 5141s**, and this run
+  cannot rule out that 5141 behaves differently from expectation on this host.
+- **The blind spot this exposes:** with a SACL scoped like this run's, **an attacker's object is
+  seen arriving and never seen leaving**. That is Module 03's Event 12-vs-13 gap, reproduced in a
+  third store, by a different mechanism.
+
+**Recommendation.**
+
+- **Treat a creation as a unit:** 5137 plus every 5136 sharing its `OpCorrelationID`.
+- **If deletions matter, audit them explicitly.** Include `Delete` / `Delete all child objects` in
+  the SACL, then **prove a 5141 fires** before relying on it, because this run never saw one.
+- **Never count 5136s as "changes made".** Group them by `OpCorrelationID` first.
+
+### Open questions — carried, not scheduled
+
+| Question | What would settle it |
+|---|---|
+| Is the missing 5141 the SACL's rights mask? | Add `Delete all child objects`, create and delete, recount — **declined 2026-10-23** |
+| Does a plain-string replacement write `Value Deleted` + `Value Added`? | Change `description` twice — **declined 2026-10-23** |
+| Does the subcategory switch alone silence AD events? | Generate a change on a SACL'd object with `Directory Service Changes` off |
+| Is a creation audited against the new object's SACL or the parent's? | Audit `CreateChild` on the parent only, create, look for a 5137 |
+| Did accidental-deletion protection add `(D;;DC;;;WD)` to the parent? | Time a protected-OU creation; compare with one made with `-ProtectedFromAccidentalDeletion $false` |
+| What do `f30e3bbe-…`, `f30e3bbf-…` and `bf967aa5-…` name? | Resolve the GUIDs on the box against the schema |
+| What do `514` and `1.2.840.113556.1.5.9` mean? | Resolve on the box — currently recall |
 
 ### Open question — how long does DC01 keep anything?
 
@@ -1001,15 +1372,14 @@ journal**, not deferred work. Step 4 records the empty baseline and the reason.
 
 | Event ID | Log | Meaning |
 |---|---|---|
-| 5136 | Security | A directory service object was **modified** |
-| 5137 | Security | A directory service object was **created** |
-| 5139 | Security | A directory service object was **moved** |
-| 5141 | Security | A directory service object was **deleted** |
+| 5136 | Security | A directory service object was **modified** — **confirmed 2026-10-23** (`.Message`). Also written during a *creation*, once per attribute filled |
+| 5137 | Security | A directory service object was **created** — **confirmed 2026-10-23** (`.Message`). Carries no attribute values |
+| 5139 | Security | A directory service object was **moved** — recall, not observed |
+| 5141 | Security | A directory service object was **deleted** — recall; **never observed**, two deletes produced none |
 | 4662 | Security | An operation was performed on an AD object — **not enabled in this module** |
 
-> **Everything in that table except the channel is recall until the run confirms it.** Resolve
-> meanings on the box via `.Message` or Event Viewer's General tab, and correct this table from
-> what the host actually printed.
+> **Rows marked recall have not been resolved on the box.** 5136 and 5137 were read from `.Message`
+> on DC01; 5139 and 5141 never appeared.
 
 **Audit subcategories**
 
@@ -1042,6 +1412,19 @@ journal**, not deferred work. Step 4 records the empty baseline and the reason.
   `OperationMasterRoles` hid `InfrastructureMaster` this way.
 - **A misspelled channel name errors loudly** (`'Directory Sercice'`); only a real channel can
   return a misleading silence.
+
+**From the run (sitting 2, 2026-10-23)** — fuller detail in the sitting 2 run log:
+
+- **An undefined variable is silently `$null`**, so a typo'd name errors on the indexing
+  (`Cannot index into a null array`), not on the misspelling.
+- **`-Confirm:$false` suppresses the prompt; the action still runs.**
+- **Variables die with the window.** Write every boundary time down in UTC so it can be re-set
+  by hand — and check the re-set against a known count.
+- **Two empty values compare equal.** Check `.Length` before trusting `-eq`.
+- **Creating an OU can change its parent's permissions.** Read the parent's SACL and DACL as well as
+  the object's.
+- **The GPO-overwrite hypothesis below survived one day:** 11.2's readback agreed with 7.1 roughly
+  ten hours later. No policy refresh was forced, so it is weak evidence, not a test.
 
 **Carried in from earlier modules** as things to watch for here:
 
