@@ -5,7 +5,8 @@
 > **Time:** ~2½ hours, split across two sittings
 > **Roll back to:** `mod09-start` (DC01, taken in Step 0) · **Do not** roll back to `mod04-start` —
 > it predates everything Module 08 left on DC01
-> **Status:** written 2026-11-03, **not yet run.** Everything marked **prediction** is the
+> **Status:** written 2026-11-03. **Sitting 1 (Steps 0–4) ran 2026-11-03 11:32 → 2026-11-04 00:18
+> UTC — run log below.** Sitting 2 (Steps 5–10) not yet run. Everything marked **prediction** is the
 > expectation as written *before* the run. Where the run disagrees, a **Run result** note will say
 > so — the run sheet is not rewritten to look as if it was right all along.
 
@@ -127,6 +128,152 @@ cannot be recovered, because **auditing is not retroactive**:
    "what does the log say when nobody asked it to watch" half of the comparison.
 3. **Every boundary time is written down in UTC before the action, not reconstructed after.**
    Sitting 2 happens on a different day; its queries depend on times written in sitting 1.
+
+---
+
+# Run log — Sitting 1 (2026-11-03 → 2026-11-04, Steps 0–4 complete, DC01)
+
+Only what was pasted back or shown in a screenshot or photo is recorded as verified. The ordering
+rules above all held: `Corp`'s SACL went on before anything was built under it, `Lab09Control` never
+got one, and every change is bracketed in UTC. **Two things went off-plan and both were repaired
+with every step timed** — `Finance`/`IT` created in the wrong place, and `hd_tech` half-created by
+a command that printed an error.
+
+**The sitting spanned a ~10-hour break** (12:28 → 22:47 UTC) in a fresh PowerShell window. Every
+time below is read off `(Get-Date).ToUniversalTime()` output, not reconstructed.
+
+## Boundaries — the table sitting 2 searches against
+
+All UTC. 2026-11-03 unless marked.
+
+| Name | Before | After | What happened in the window |
+|---|---|---|---|
+| `B0` | 11:32:35 | — | start of the module's changes; everything earlier is the control |
+| `C` | 11:46:59 | 11:47:00 | `Corp` created under the domain root |
+| `L` | 11:58:54 | 11:58:55 | `Lab09Control` created under the domain root |
+| `S` | 12:02:11 | 12:08:30 | SACL added to `Corp` via `dsa.msc` |
+| — | 12:25:41 | 12:25:46 | `Users` created under `Corp` |
+| — | 12:27:45 | 12:27:45 | `Finance` created — **under `Corp`, not `Corp/Users`** (wrong `-Path`) |
+| — | 12:27:58 | 12:27:58 | `IT` created — **under `Corp`, not `Corp/Users`** (wrong `-Path`) |
+| — | 12:28:11 | 12:28:11 | `Workstations` created under `Corp` |
+| — | 12:28:26 | 12:28:27 | `Servers` created under `Corp` |
+| — | 12:28:42 | 12:28:42 | `Groups` created under `Corp` |
+| `FU` | 22:47:17 | 22:47:21 | `Finance` accidental-deletion protection **off** |
+| `FM` | 22:50:46 | 22:50:47 | `Finance` moved `Corp` → `Corp/Users` |
+| — | 22:54:01 | 22:54:02 | re-protect attempted at `Finance`'s **old** path — `Directory object not found`; **no change** |
+| `FP` | 22:54:37 | 22:54:37 | `Finance` protection **on**, at `OU=Finance,OU=Users,OU=Corp,…` |
+| `IU` | 22:57:35 | 22:57:35 | `IT` protection **off** |
+| `IM` | 22:58:14 | 22:58:14 | `IT` moved `Corp` → `Corp/Users` |
+| `IP` | 22:58:40 | 22:58:41 | `IT` protection **on**, at `OU=IT,OU=Users,OU=Corp,…` |
+| `M1`→`M2` | 23:12:26 | 23:17:07 | `asmith` moved `CN=Users` → `Corp/Users/Finance` |
+| `M2`→`M3` | 23:17:07 | 23:18:14 | `WS01` (account) moved `CN=Computers` → `Corp/Workstations` |
+| `T` | 23:30:04 | 23:31:29 | `lab_fin09` and `lab_IT09` created, disabled |
+| `G` | 23:36:12 | 23:38:14 | `HelpDesk-Ops` created, Global, in `Corp/Groups` |
+| `H` | 23:45:42 | — | `hd_tech` creation — three attempts, see 4.4 below. **No after-time; `P1` closes it** |
+| `P` | 23:53:33 | 23:55:51 | Administrator **reset** `hd_tech`'s password (`Set-ADAccountPassword -Reset`) |
+| `E` | 00:01:56 (11-04) | 00:05:15 (11-04) | `hd_tech` enabled |
+| `A` | 00:07:21 (11-04) | 00:08:01 (11-04) | `hd_tech` added to `HelpDesk-Ops` |
+| `S1end` | 00:18:33 (11-04) | — | end of sitting 1 |
+
+## Step 0 — pre-flight
+
+| Step | Read | Result |
+|---|---|---|
+| 0.1 | snapshot | VirtualBox title bar reads **`Windows 2022 (mod-09-start) [Running]`** — the snapshot exists, spelt **`mod-09-start`** (hyphens), not the sheet's `mod09-start`. Taken on 2026-11-03 is **assumed** — the title shows the snapshot, not its date |
+| 0.2 | `hostname` | **`DC01`** |
+| 0.3 | three `auditpol /get` | **all three predictions held.** `Directory Service Changes` **Success** (Module 08's setting survived); `User Account Management` and `Security Group Management` **Success and Failure**. `09-preflight.png` (`hostname` in frame) |
+| 0.4 | `(Get-Acl -Path 'AD:/DC=corp,DC=local').Sddl -like '*(D;;DC;;;WD)*'` | **first: `Cannot find drive. A drive with the name 'AD' does not exist`**, fixed by `Import-Module ActiveDirectory` (see Notes). **Then `False` — a typo**: the pattern was typed `'*(D;;DC;;WD)*'`, **two** semicolons where there are three. Before the typo was spotted, `.Access \| Where-Object AccessControlType -eq 'Deny'` showed one entry: `DeleteChild`, `Everyone`, `Deny`, `InheritanceType None`, `IsInherited False`. **Retyped: `True`.** Domain root unchanged since Module 08 |
+| 0.5 | `(Get-Date).ToUniversalTime()` | **`B0` = Tuesday, November 3, 2026 11:32:35 AM** |
+
+## Step 1 — the starting picture
+
+| Step | Read | Result |
+|---|---|---|
+| 1.1 | `Get-ADOrganizationalUnit -Filter *` | one OU, `Domain Controllers`, `OU=Domain Controllers,DC=corp,DC=local`. **First try printed `{}`** in the DN column — the property was typed `DistinguishedNamme`. `@(…).Count` → **1** |
+| 1.2 | `Get-ADUser asmith`, `Get-ADComputer WS01` | `asmith` in `CN=Users`, `WS01` in `CN=Computers` — **as relayed** (typed back in lower case with spaces); predictions held |
+
+## Step 2 — the top of the tree, and the control
+
+| Step | Read | Result |
+|---|---|---|
+| 2.1 / 2.2 | readback | three OUs: `Domain Controllers`, `Corp`, `Lab09Control` (as relayed) |
+| 2.3 | SACL via `dsa.msc` | dialog confirmed as **"for Corp"**. The new entry opened with **`Read all properties` and `List contents` pre-ticked** — unticked before OK (`Directory Service Access` is Success, so read auditing would flood the log; the flood is **reasoning, not tested here**). Ticked: `Write all properties`, `Modify permissions`, `Create all child objects` |
+| 2.4 | `(Get-Acl 'AD:/OU=Corp,…' -Audit).Audit`, then `@(…).Count` | **prediction held. 3 entries.** (1) **`CreateChild, WriteProperty, WriteDacl`**, `InheritanceType All`, `ObjectType` all-zero, `Success`, `Everyone`, **`IsInherited False`** — `WriteDacl` printed by name. (2)/(3) `WriteProperty` on `f30e3bbe-…` / `f30e3bbf-…`, `InheritedObjectType bf967aa5-…`, **`IsInherited True`** — the same two Module 08 saw, GUIDs still unresolved |
+| 2.5 | same on `Lab09Control` | **the control holds. 2 entries**, both the inherited `WriteProperty` pair; **no `WriteDacl`, nothing `IsInherited False`**. `09-sacl-corp-vs-control.png` (both readbacks and both counts in one frame; **no `hostname` in frame**) |
+
+## Step 3 — the structure, and a wrong path
+
+**Run result — `Finance` and `IT` were created in the wrong place.** Their `-Path` was typed as
+`'OU=Corp,DC=corp,DC=local'`, not `'OU=Users,OU=Corp,…'`; a `-SearchBase` readback confirmed 7 OUs
+with both directly under `Corp`. Both are **protected from accidental deletion by default**
+(`ProtectedFromAccidentalDeletion` read `True` on each before the change), so the repair was, per
+OU: protection off → `Move-ADObject` → protection on at the new path, each timed (table above), each
+read back:
+
+| Read | Result |
+|---|---|
+| `Finance` protection after `FU` | `False` |
+| `Finance` DN after `FM` | `OU=Finance,OU=Users,OU=Corp,DC=corp,DC=local` |
+| `Finance` protection after `FP` | `True` |
+| `IT` at old path after `IP` | **`Directory object not found`** — proves it left `Corp`, not where it went |
+| `IT` at new path | `IT  True` |
+| 3.2 tree, `hostname` in frame | **7 OUs**, `Finance` and `IT` both `OU=…,OU=Users,OU=Corp,…`. `09-ou-tree.png` |
+
+**Consequence for 7.7.** The by-product question — *does creating a protected OU add
+`(D;;DC;;;WD)` to its parent?* — now has **more** to work with, not less, but its prediction no
+longer fits as written. Nothing was ever *created* under `Corp/Users`; `Finance` and `IT` *arrived*
+there by move, unprotected, and were protected afterwards. **Sitting 2 should line `Users`'
+`nTSecurityDescriptor` 5136s up against `FP` and `IP` (protection turned on with `Users` as the
+parent), and `Corp`'s against `FU`/`IU` as well as the creation times.** That protection-on is the
+moment the parent gains the entry is a **hypothesis**, sharper than Module 08's but still untested.
+
+## Step 4 — fill it
+
+| Step | Read | Result |
+|---|---|---|
+| 4.1 | `Get-ADUser asmith \| Select-Object DistinguishedName` | `CN=asmith,OU=Finance,OU=Users,OU=Corp,DC=corp,DC=local`. **First try failed loudly**: `Move_ADObject` (underscore) — `is not recognized as the name of a cmdlet`; no change |
+| 4.1 | `Get-ADComputer WS01 \| …` | `CN=WS01,OU=Workstations,OU=Corp,DC=corp,DC=local`. One `M3` attempt typed `(Get-Date)/ToUniversalTime()` — parser error, no time; retyped |
+| 4.2 | `Get-ADUser -Filter "Name -like 'lab_*09'"` | `lab_fin09` `False` `CN=lab_fin09,OU=Finance,…`; **`lab_IT09`** `False` `CN=lab_IT09,OU=IT,…`. **Created as `lab_IT09`** (capital `IT`), not the sheet's `lab_it09` |
+| 4.3 | `Get-ADGroup 'HelpDesk-Ops'` | **`HelpDesk-Ops`** `Global` `CN=HelpDesk-Ops,OU=Groups,OU=Corp,DC=corp,DC=local`. **Created as `HelpDesk-Ops`** (capital `D`), not the sheet's `Helpdesk-Ops` |
+| 4.4 | see below | `hd_tech` `Enabled True`, `hd_tech@corp.local`, `CN=hd_tech,OU=IT,OU=Users,OU=Corp,DC=corp,DC=local` |
+| 4.4 | `Get-ADGroupMember 'HelpDesk-Ops'` | **`hd_tech`**, one member |
+| 4.5 | `(Get-Date).ToUniversalTime()` | **`S1end` = Wednesday, November 4, 2026 12:18:33 AM** |
+
+AD matching is case-insensitive, so the sheet's later commands still work against `lab_IT09` and
+`HelpDesk-Ops`. **Findings and hunts quote the stored case.**
+
+**Run result — `hd_tech` was created by a command that printed an error.** Three `New-ADUser`
+attempts after `H1`:
+
+| Attempt | Error | What it did |
+|---|---|---|
+| 1 | `A positional parameter cannot be found that accepts argument ']'` — a stray `]` at the end | nothing; binding failed |
+| 2 | **`The password does not meet the length, complexity, or history requirement of the domain`** (`ADPasswordComplexityException`) — the prompt showed 4 characters | **created the account anyway** |
+| 3 | **`The specified account already exists`** (`ADIdentityAlreadyExistsException`) | nothing — but proves attempt 2 left an object |
+
+Readback after attempt 3: **`Enabled False`, `PasswordLastSet` empty**, in the right OU. That
+`New-ADUser` creates the object first and sets the password second is **recall**; the readback is
+the evidence. Repaired with `Set-ADAccountPassword -Identity hd_tech -Reset` (`P`, no error) and
+`Enable-ADAccount` (`E`). Final readback: **`Enabled True`, `PasswordLastSet 11/4/2026 12:55:41 AM`**
+— local time; **23:55:41 UTC on 11-03, inside `P`**.
+
+**Not verified: that the password set at `P` is `Lab-Passw0rd!`.** The domain accepted it, which
+proves complexity, not value. Step 6.1 will show it — a failed credential there means one more
+timed reset.
+
+**Consequence for Step 7.** The sheet expected `hd_tech`'s creation to write 4720 + 4722 + 4724 in
+one second. **That is not what happened.** Expect instead a 4720 near `H1` with no password, an
+**Administrator-made 4724 on `hd_tech` inside `P`**, and an enable inside `E`. **So there is an
+admin reset to tell apart from the delegated one** — Subject `Administrator`, Target `hd_tech`,
+inside `P` — and the Target Account field still separates them. Which IDs actually appear is
+**not established until read**.
+
+## Open after sitting 1
+
+- Whether the moves wrote anything (5139 is **recall — never observed**) — read in sitting 2.
+- Whether `hd_tech`'s password is `Lab-Passw0rd!` — Step 6.1.
+- The ~10-hour break inside the sitting is a gap with no lab activity planned in it; anything
+  logged there is not this module's.
 
 ---
 
@@ -996,9 +1143,10 @@ Into the run log, from readbacks:
 Save into `../assets/`. **Put `hostname` at the top of every terminal frame.** Frames captured
 from the host show the host's taskbar — crop to the VM window before committing.
 
-- [ ] `09-sacl-corp-vs-control.png` — `Corp`'s SACL with `WriteDacl`, and `Lab09Control`'s
-      without (2.4–2.5)
-- [ ] `09-ou-tree.png` — the finished structure (3.2)
+- [x] `09-preflight.png` — `hostname` and the three 0.3 `auditpol` reads (added; filed 2026-11-04)
+- [x] `09-sacl-corp-vs-control.png` — `Corp`'s SACL with `WriteDacl`, and `Lab09Control`'s
+      without (2.4–2.5). Filed 2026-11-04. **No `hostname` in frame**
+- [x] `09-ou-tree.png` — the finished structure (3.2), `hostname` in frame. Filed 2026-11-04
 - [ ] `09-delegation-readback.png` — the two `Helpdesk-Ops` ACEs on Finance, and the count (5.3)
 - [ ] `09-5136-delegation.png` — the Finance 5136 diff and the decoded ACE (7.3)
 - [ ] `09-control-silent.png` — the 7.2 `ObjectDN` list, showing Finance and **not**
@@ -1064,6 +1212,27 @@ from the host show the host's taskbar — crop to the VM window before committin
 - **`-SearchBase` limits a search to one branch.** Without it, `Get-ADOrganizationalUnit -Filter *`
   covers the whole domain.
 - **Never move DC01 out of `Domain Controllers`.**
+
+**Found in sitting 1 (2026-11-03):**
+
+- **The `AD:` drive does not exist until the ActiveDirectory module loads.** `Get-Acl -Path 'AD:/…'`
+  in a fresh window → `Cannot find drive. A drive with the name 'AD' does not exist`. `Get-AD…`
+  cmdlets load the module themselves; `Get-Acl` does not. **Run `Import-Module ActiveDirectory`
+  first in every new window** — sitting 2's Steps 5.3 and 7 use the drive.
+- **A command that printed an error can still have changed the directory.** `New-ADUser` with a
+  rejected password failed loudly and left `hd_tech` behind, disabled, no password. Read back after
+  a failure too.
+- **A misspelt property in `Select-Object` prints `{}` or blank, not an error** —
+  `DistinguishedNamme`. Same family as the `-Name` trap.
+- **A missing character in a `-like` pattern returns `False`, not an error** — `(D;;DC;;WD)` vs
+  `(D;;DC;;;WD)`. Wrong value whispers, again.
+- **`-Path` is where the new object goes *into*.** Read it right to left before pressing Enter;
+  `Finance` and `IT` landed one level too high.
+- **An OU is protected from accidental deletion by default**, so moving one means protection off →
+  move → protection on, and **the readback after the move must use the new path** — the old one
+  returns `Directory object not found`.
+- **`Ctrl+C` at a `>>` continuation prompt discards the pending lines without running them**
+  (observed: no output followed). Useful for abandoning a half-typed block.
 
 **Carried in from earlier modules:**
 

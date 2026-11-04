@@ -37,14 +37,37 @@ rather than trying to inspect anything directly.
 
 ## Where things stand
 
-### 🚩 START HERE — the next sitting (set 2026-11-03, after Module 08 closed)
+### 🚩 START HERE — the next sitting (set 2026-11-04, after Module 09 sitting 1)
 
-**Module 08 is ✅ COMPLETE** (closed 2026-11-03). **Next: Module 09 sitting 1** —
-`labs/09-ous-and-delegation.md`, Steps 0–4, **DC01 only**, run sheet written 2026-11-03 and not yet
-run. It tests whether delegating control of an OU is logged at all: the identical delegation on
-`Corp/Users/Finance` (under a SACL auditing `Modify permissions`) and on `Lab09Control` (no SACL).
-**Ordering is load-bearing:** `Corp`'s SACL before anything is built under it; `Lab09Control` never
-gets one; every boundary written down in UTC, because sitting 2's queries depend on sitting 1's times.
+**Next: Module 09 sitting 2** — `labs/09-ous-and-delegation.md`, Steps 5–10, **DC01 only**. Sitting 1
+(Steps 0–4) ran 2026-11-03 11:32 → 2026-11-04 00:18 UTC; **its run log and the full UTC boundary
+table are in the module, above Step 0** — sitting 2's queries start from those times, not from
+anything here. Step 5 delegates password reset to `HelpDesk-Ops` on `Corp/Users/Finance` (audited,
+`WriteDacl`) and `Lab09Control` (no SACL); Step 6 uses it as `hd_tech`; Step 7 reads the log.
+
+**DC01 state after sitting 1 — readback-verified:** OUs `Corp` (SACL: Everyone, Success,
+`CreateChild, WriteProperty, WriteDacl`, inherit All) → `Users` → `Finance`, `IT`; `Corp` →
+`Workstations`, `Servers`, `Groups`; `Lab09Control` at the root, **no SACL of its own**. `asmith` in
+`Finance`, `WS01` (account) in `Workstations`, `lab_fin09` / **`lab_IT09`** (disabled) in `Finance` /
+`IT`, **`HelpDesk-Ops`** (Global) in `Groups` with one member, `hd_tech` (enabled, in `IT`).
+Snapshot is named **`mod-09-start`** (hyphens). Domain root still carries `(D;;DC;;;WD)`.
+
+**Carry into sitting 2:**
+
+- **Run `Import-Module ActiveDirectory` first** — the `AD:` drive does not exist in a fresh window
+  until it loads, and Steps 5.3 and 7 use it.
+- **`hd_tech`'s password is not verified** as `Lab-Passw0rd!` (accepted by the domain; value
+  unseen). Step 6.1 tests it; on failure, one more timed reset.
+- **There is an Administrator-made 4724 on `hd_tech`** (23:53:33–23:55:51 UTC 11-03), because
+  `New-ADUser` failed its password and left the account half-made. Separate it from the delegated
+  reset by Subject and Target.
+- **7.7's prediction no longer fits as written** — `Finance` and `IT` reached `Users` by move and
+  were re-protected there. The module's run log says which times to line up.
+- **Quote stored case:** `lab_IT09`, `HelpDesk-Ops` (the sheet says `lab_it09`, `Helpdesk-Ops`).
+
+**Previous block (set 2026-11-03, after Module 08 closed) — superseded:**
+
+**Module 08 is ✅ COMPLETE** (closed 2026-11-03).
 
 **Close-out facts from 2026-11-03:**
 
